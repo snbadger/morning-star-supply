@@ -31,6 +31,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .badge-partial { background: #cce5ff; color: #004085; }
 .chevron { color: #999; font-size: 20px; }
 
+/* Category Filter Pills */
+.category-filter-pills { display: flex; gap: 6px; padding: 10px 16px 0; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 8px; }
+.category-pill { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1.5px solid #ddd; background: white; cursor: pointer; white-space: nowrap; }
+.category-pill.active { background: #2980b9; color: white; border-color: #2980b9; }
+
+/* Category Sections */
+.category-section { margin-bottom: 12px; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.08); border-left: 5px solid #999; }
+.category-header { padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #fafafa; user-select: none; -webkit-user-select: none; }
+.category-header:active { background: #f0f0f0; }
+.category-header-left { display: flex; flex-direction: column; flex: 1; }
+.category-title { font-size: 15px; font-weight: 600; color: #333; }
+.category-progress { font-size: 12px; color: #999; margin-top: 2px; }
+.category-chevron { color: #999; font-size: 18px; transition: transform 0.2s; }
+.category-section.collapsed .category-chevron { transform: rotate(-90deg); }
+.category-items { padding: 0; max-height: 5000px; overflow: hidden; transition: max-height 0.3s ease; }
+.category-section.collapsed .category-items { max-height: 0; }
+
 /* Item view */
 .item-view { padding: 16px; }
 .item-card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
@@ -98,381 +115,520 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .toast.show { opacity: 1; }
 
 /* Mark all buttons */
-.mark-all-row { display: flex; gap: 6px; padding: 4px 16px 8px; }
-.mark-all-btn { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1.5px solid; }
-.mark-all-full { border-color: #27ae60; color: #27ae60; background: white; }
-.mark-all-full:active { background: #27ae60; color: white; }
+.mark-all-btns { display: flex; gap: 8px; padding: 10px 16px; }
+.mark-all-btn { flex: 1; padding: 10px; font-size: 12px; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer; }
+.mark-all-btn:active { opacity: 0.8; }
 </style>
 </head>
 <body>
 
-<div id="app"></div>
+<div id="mainView">
+  <div class="header">
+    <h1>Morning Star Supply Order</h1>
+    <div class="subtitle">57-bed skilled nursing facility · Clovis, CA</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+    </div>
+  </div>
+
+  <div class="locations" id="locations"></div>
+  <div class="bottom-spacer"></div>
+</div>
+
+<div id="itemView" style="display: none;">
+  <div class="header">
+    <button class="back-btn" onclick="backToLocations()">← Back</button>
+    <h1 id="locationTitle">Location</h1>
+    <div class="progress-bar">
+      <div class="progress-fill" id="itemProgressFill" style="width: 0%"></div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" class="search-input" id="searchInput" placeholder="Search items...">
+  </div>
+
+  <div class="category-filter-pills" id="categoryPills"></div>
+
+  <div class="mark-all-btns">
+    <button class="mark-all-btn" onclick="markAllAsStatus('full')">Mark All Full</button>
+    <button class="mark-all-btn" onclick="markAllAsStatus('low')">Mark All Low</button>
+    <button class="mark-all-btn" onclick="markAllAsStatus('empty')">Mark All Empty</button>
+    <button class="mark-all-btn" onclick="resetAllStatuses()">Reset</button>
+  </div>
+
+  <div class="item-view" id="itemsContainer"></div>
+  <div class="bottom-spacer"></div>
+</div>
+
+<div id="summaryView" style="display: none;">
+  <div class="header">
+    <button class="back-btn" onclick="backToLocations()">← Back</button>
+    <h1>Order Summary</h1>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-num green" id="countFull">0</div>
+      <div class="stat-label">Full</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num orange" id="countLow">0</div>
+      <div class="stat-label">Low</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num red" id="countEmpty">0</div>
+      <div class="stat-label">Empty</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num gray" id="countUncount">0</div>
+      <div class="stat-label">Uncounted</div>
+    </div>
+  </div>
+
+  <div class="summary" id="summaryContainer"></div>
+  <div class="bottom-spacer"></div>
+</div>
+
+<div id="csv-export" style="display: none;"></div>
+
+<div class="action-bar" id="actionBar"></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-// MORNING STAR SUPPLY ORDER APP
-// ═══════════════════════════════════════════════════════
+const ITEMS = [{"location": "West Hall", "itemNumber": "MTB084Z", "description": "BRIEF,ULTRA,3XL,65-84,48/CS,12/BG", "par": 42, "notes": "", "category": "Incontinence"}, {"location": "Supply Closet", "itemNumber": "PRM25865H", "description": "BANDAGE,GAUZE,4.5\"X4.1YD,STERILE,LF", "par": 29, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "FITEXTRALG", "description": "BRIEF,EXTRA,FITEXTRA,LG,44-56", "par": 7, "notes": "", "category": "Incontinence"}, {"location": "West Hall", "itemNumber": "FITEXTRAXLG", "description": "BRIEF,EXTRA,FITEXTRA,XLG,56-64", "par": 7, "notes": "", "category": "Incontinence"}, {"location": "Med Room", "itemNumber": "MPH4550Z", "description": "STRIP,GLUCOSE,EVENCARE PRO", "par": 7, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "FITEXTRAXXL", "description": "BRIEF,EXTRA,FITEXTRA,XXL,60-70", "par": 6, "notes": "", "category": "Incontinence"}, {"location": "West Hall", "itemNumber": "6PVC512", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,M", "par": 5, "notes": "", "category": "Gloves"}, {"location": "Supply Closet", "itemNumber": "PRM088004H", "description": "BANDAGE,COHESIVE,TAN,4X5YD,LF,NS", "par": 5, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "CRI4000", "description": "GOWN,COVER,SPP,ELSTWRIST,NCKTIE,YEL,REG", "par": 6, "notes": "", "category": "PPE"}, {"location": "West Hall", "itemNumber": "6PVC513", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,L", "par": 4, "notes": "", "category": "Gloves"}, {"location": "Med Room", "itemNumber": "OTCM00021H", "description": "TAB ACETAMINOPHEN 325MG 100/BT", "par": 4, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "MSC095206", "description": "CLEANSER,SPRAY, REMEDY ESSENTIALS, 8OZ", "par": 3, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "West Hall", "itemNumber": "MSC095014H", "description": "CREAM,SHAVE,MEDSPA,1.5 OZ", "par": 5, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "OTC030603", "description": "POLYETHYLENE GLYCOL PWD 17.9OZ BT", "par": 3, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "6PVC514", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,XL", "par": 3, "notes": "", "category": "Gloves"}, {"location": "Housekeeping", "itemNumber": "EVSBH24338N", "description": "LINER,NATURAL,24X33,X LIGHT,ROLL", "par": 3, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "MNK0015H", "description": "DRESSING,HONEY,THERAHONEY,1.5 OZ TUBE", "par": 3, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "R-L64628", "description": "MBO- JEVITY 1.5, UNFLAVORED, 8 OZ CARTON", "par": 3, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Supply Closet", "itemNumber": "MSC3244Z", "description": "GAUZE,BORDER,4\"X4\",2.5\"X2.5\"PAD,STERILE", "par": 3, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "NON27378", "description": "MASK, LOOP, BLUE, LVL 1", "par": 3, "notes": "", "category": "PPE"}, {"location": "Med Room", "itemNumber": "OTC002601", "description": "FERROUS SULFATE 325MG TAB 100/BT", "par": 3, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "CRI4001", "description": "GOWN,COVER,SPP,ELSTWRIST,NCKTIE,YEL,XL", "par": 4, "notes": "", "category": "PPE"}, {"location": "Supply Closet", "itemNumber": "UROECLIPSEH", "description": "COVERED BAG,DRAIN,ANTI-REFLUX TOW,2000ML", "par": 3, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "FITPLUSXLG", "description": "BRIEF,EXTRA,FITPLUS,XLG,56-64", "par": 4, "notes": "", "category": "Incontinence"}, {"location": "Med Room", "itemNumber": "HTD8162Z", "description": "SAFETY PEN NEEDLE, 31G, 6MM", "par": 3, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "FIT23WLXL", "description": "WOMENS UNDERWEAR,ULTRA,LG/XL,40-56", "par": 3, "notes": "", "category": "Incontinence"}, {"location": "West Hall", "itemNumber": "FITPLUSLG", "description": "BRIEF,EXTRA,FITPLUS,LG,44-56", "par": 4, "notes": "", "category": "Incontinence"}, {"location": "Med Room", "itemNumber": "MPHADJDEPTHZ", "description": "LANCET,SAFETY,23G,ADJ,PRESSURE", "par": 3, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "PRM21408CZ", "description": "GAUZE,SPONGE,4X4,8PLY,NS,LF,200/PK", "par": 3, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "NON243277", "description": "PAPER,TISSUE,FACE,STAND,FLAT,90SHT/30BX", "par": 3, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "PRM21208CZ", "description": "GAUZE,SPONGE,2X2,8PLY,NS,LF,200/PK", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC086406", "description": "MELATONIN 3MG TAB 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "NONPBM800N", "description": "PAPER,TOWEL,ROLL,STND, NAT, 8\"X800', 6CS", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "OTC091401", "description": "VITAMIN B-12 1000MCG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "MDS137015ZZ", "description": "BRUSH,HAIR,ADULT", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "West Hall", "itemNumber": "6PVC511", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,S", "par": 2, "notes": "", "category": "Gloves"}, {"location": "West Hall", "itemNumber": "PGA101H", "description": "HOLDER,EZP URINAL, HOOK&LOOP STRAP", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "BRN1333Z", "description": "RAZOR,TRIPLE BLADE,W/LUBE STRIP,PK OF 10", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "West Hall", "itemNumber": "FITPLUSXXL", "description": "BRIEF,EXTRA,FITPLUS,XXL,60-70", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Med Room", "itemNumber": "OTCM00011H", "description": "SENNA-S TAB 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "RDI30296", "description": "SOLUTION,SALINE,IRRGATION,100ML,STRL", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "FIT23WSM", "description": "WOMENS UNDERWEAR,ULTRA,SMALL/MED,28-40", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Supply Closet", "itemNumber": "HUDRHUD39UZ", "description": "SALINE,.9 PCNT,3 ML,ADDIPAK,STERILE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "MPHBAAAZ", "description": "BATTERY, ALKALINE, MEDCELL, 1.5V, AAA", "par": 2, "notes": "", "category": "Equipment & Furniture"}, {"location": "Med Room", "itemNumber": "OTC050101", "description": "MULTI-VITAMIN TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC042101", "description": "DOCUSATE SODIUM 100MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "EVSBH404813N", "description": "LINER,NATURAL,40X48,LIGHT,ROLL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "HUDRHP340U", "description": "KIT,HUMID,AQUAPAK,340ML,H2O,W/ADPT", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC84501", "description": "CRANBERRY 450MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "MSC263754", "description": "WIPE, WET, SCENTED, 8X10\", 68/PK", "par": 2, "notes": "", "category": "Wipes & Washcloths"}, {"location": "Med Room", "itemNumber": "OTCM00004H", "description": "ASPIRIN 81MG CHEW ORANGE TAB 36/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "HH70G1000", "description": "HAND SANITIZER,GEL, SPECTRUM 70%, 1000ML", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "West Hall", "itemNumber": "DYND80235S", "description": "URINAL,MALE,SUPREME", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTCM00022H", "description": "TAB ACETAMINOPHEN 500MG 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "FITPLUSMD", "description": "BRIEF,EXTRA,FITPLUS,MD,32-44", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Supply Closet", "itemNumber": "MSC3222Z", "description": "GAUZE,BORDERED,2\" X 2\"(1\" X 1\"PAD)STRL", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "SNAPSECURE", "description": "SNAPSECURE FOLEY DEVICE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTCM00003H", "description": "ASPIRIN 81MG EC TAB 120/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "NONPC1000Z", "description": "POUCH,MEDICATION,PILL,F/PILL CRUSHER", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "MSC3266Z", "description": "GAUZE,BORDER,6\"X6\",4\"X4\"PAD,STERILE", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "MDS093944H", "description": "SOLUTION,PREP,POVIDONE IODINE,4 OZ BTL", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC698112", "description": "BISACODYL 10MG SUPPOSITORY 12/BX", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC786094", "description": "MELATONIN 5MG TAB 90/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC64916H", "description": "MILK OF MAGNESIA 16OZ BOTTLE", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "HHABSP1200G", "description": "ANTIBACTERIAL HAND SOAP, GEL, 1200ML", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "OTC063412", "description": "MAGNESIUM OXIDE 400MG TAB 120/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC011001", "description": "MBO-ARTIFICIAL TEARS LUB OPH DROP 15ML", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "West Hall", "itemNumber": "DYND80347", "description": "WASHBASIN,RECTANGULAR,GRAPHITE,6 QT", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "West Hall", "itemNumber": "MEC37226", "description": "CLIPPER,NAIL,TOE,NO-FILE,LARGE", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "OTC079316", "description": "GUAIFENESIN 200MG/10ML SF/AF SOLN 16OZ", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Nurses Station", "itemNumber": "NON03009", "description": "CUP,PLASTIC,9 OZ,TRANSLUCENT", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "OTC223383", "description": "VITAMIN C 500MG TAB 250/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "SZM553243", "description": "SYSTEM,COMPRESSION,URGOK2,DUAL,REGULAR", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC533260", "description": "ZINC 50MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC074706", "description": "CALCIUM 600MG+VIT D 5MCG TAB 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "POYTM1616SCS", "description": "BATH TIS,UNIV,2-PLY WHT 96RL/500", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "MDSR004907", "description": "SCISSORS, BLACK HANDLE, ECONOMY", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "XAPENS115NS", "description": "SYRINGE,PISTON,FLAT TOP,ENFIT TIP", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "MEC37224", "description": "CLIPPER,NAIL,FINGER,NO-FILE", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "OTC143890", "description": "MAGNESIUM CITRATE ORAL SOLN CHERRY 10OZ", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC000901", "description": "VITAMIN D3 50MCG(2000IU) SG 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "HD8884719010H", "description": "SPIROMETER,INCNTIV,VOLDYNE,4000ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTCS0673C2", "description": "ANTACID CALC CARB 500MG CHEW TAB 150/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC053101", "description": "MULTI-VITAMIN  MINERAL TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "BXT775659TH", "description": "MBO-SET,SPIKE,E-PUMP,ENPLUS,KANGAROO", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Supply Closet", "itemNumber": "COV84700207EH", "description": "TUBE,PUMP,SET,EXTENSION,ENFIT", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Supply Closet", "itemNumber": "MDS090735", "description": "PAD,PREP,ALCOHOL,STRL,MEDIUM,2-PLY", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC00042A", "description": "COUGH DROP CHERRY 30CT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "MSC32410Z", "description": "GAUZE,BORDER,4\"X10\",(2X8\"PAD),STERILE", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "DYNC8522", "description": "BEDPAN,FRACTURE,GRAPHITE,24 EA", "par": 2, "notes": "", "category": "Equipment & Furniture"}, {"location": "Med Room", "itemNumber": "OTC039733", "description": "OMEPRAZOLE MAG 20.6MG DR CAP 42/BX", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "MDT825150", "description": "HOLDER,URINE DRAINAGE BAG,POLY/COT,EA", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC051281", "description": "FOLIC ACID 1000MCG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC091105", "description": "DBD-LIDOCAINE 4% PATCH 5/BX", "par": 2, "notes": "", "category": "Other"}, {"location": "Med Room", "itemNumber": "OTC375086", "description": "LOPERAMIDE 2MG CPLT 24/BX", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "MSC092544", "description": "ZINC PASTE, REMEDY CLINICAL, 4OZ", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC274170", "description": "CO Q-10 30MG CAP 30/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC00043A", "description": "COUGH DROP HONEY LEMON 30CT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "CPI36093616H", "description": "SOL,DAKIN .25%,1/2 STRENGTH,NO RETURN", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC44101", "description": "BISACODYL 5MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "HCS4514", "description": "CANNULA,ADULT,SOFT-TOUCH,7TUBE,SC", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "MPH4560", "description": "CONTROL,EVENCARE PRO, HI LO", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "CTR000413", "description": "MOUTHWASH,ALCOHOL FREE,4 OZ", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Nurses Station", "itemNumber": "DYND70000", "description": "MEDICINE CUP GRAD PLSTC 1OZ ML", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "OTC176001N", "description": "SODIUM CHLORIDE 1GM TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "MPHBAAZ", "description": "BATTERY, ALKALINE, MEDCELL, 1.5V, AA", "par": 2, "notes": "", "category": "Equipment & Furniture"}, {"location": "Med Room", "itemNumber": "OTC030602", "description": "POLYETHYLENE GLYCOL PWD 8.3OZ BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Nurses Station", "itemNumber": "NON03010BAR", "description": "CUP,PLASTIC,10 OZ,GRADUATED", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "OTCM00015H", "description": "CETIRIZINE 10MG TAB 30/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "FITEXTRASM", "description": "BRIEF,EXTRA,FITEXTRA,SM,20-32", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Nurses Station", "itemNumber": "NON042000", "description": "TEASPOON,PLASTIC,5 IN,WHITE,STD WT", "par": 2, "notes": "", "category": "Dining & Utensils"}, {"location": "West Hall", "itemNumber": "MDS136700", "description": "TOOTHBRUSH,DELUXE,IND. WRAPPED", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC240908", "description": "VITAMIN D-3 1250MCG 50,000IU TAB 30/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "R-L64918", "description": "MBO-GLUCERNA,1.2,VANILLA,8OZ,CARTON", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "OTC045101", "description": "SENNA TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "BRN1312Z", "description": "RAZOR,TWIN BLADE,DISPOSABLE", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Supply Closet", "itemNumber": "PRM21450Z", "description": "PAD,ABDOMINAL,5\"X9\",ST,LF,25/BX", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC068101", "description": "DIPHENHYDRAMINE 25MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "MSC7312EP", "description": "DRESSING,ALGINATE,ROPE,MAXORB II,1\"X12\"", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Nurses Station", "itemNumber": "NON02325", "description": "STRAW,PLASTIC,7 3/4,WRAPPED,FLEX", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "BRDFOL0101H", "description": "MBO-STABILIZER,CATHETER,FOLEY,STATLOCK", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Supply Closet", "itemNumber": "MDS705153", "description": "CONTAINER,SHARPS,5 QT,RED,WALL MOUNT", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "NON24506A", "description": "SURG N95 RESP, CONE, REGULAR, WHITE", "par": 2, "notes": "", "category": "PPE"}, {"location": "West Hall", "itemNumber": "MDS136405Z", "description": "CLEANSER,DENTURE,TABLETS", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "West Hall", "itemNumber": "MMM8210SPECZ", "description": "MASK,RESP,N95,MED,INDUSTRIAL,NO", "par": 2, "notes": "", "category": "PPE"}, {"location": "Supply Closet", "itemNumber": "SWD763656", "description": "BAG SET,KANGAROO JOEY,1000ML", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Housekeeping", "itemNumber": "NON25815", "description": "PAPER,TOWEL,MULTIFOLD,NATURAL, 4000EA/CS", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "HCS676", "description": "TUBING,ADAPTER,15\",HUMIDIFIER CONNECTOR", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC16001", "description": "MULTI-VITAMIN NEPHRO-VITE TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "GOJ312708", "description": "SHAMPOO,BODY WASH,PROVON,NXT,1000ML", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Supply Closet", "itemNumber": "MSC3236Z", "description": "GAUZE, BORDER, 3\"X6\", 1.5\"X4\"PAD,STERILE", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "NON21450H", "description": "PAD,ABDOMINAL,5\"X9\",STERILE,LF,1/PK", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "NON24507AZ", "description": "SURG N95 RESP, CONE, SMALL, WHITE", "par": 2, "notes": "", "category": "PPE"}, {"location": "Med Room", "itemNumber": "OTC226681", "description": "VITAMIN B COMPLEX+VIT C 300MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "CUR0700RBH", "description": "BANDAGE,ADHSV,FABRIC,CURAD,ASSTD,100", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC214954", "description": "FISH OIL 1000MG SG 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC851019", "description": "VITAMIN B-1 100MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC279847", "description": "VITAMIN D-3 50MCG 2000IU TAB 250/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "EVSBH303710N", "description": "LINER,NATURAL,30X37,X LIGHT,ROLL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "HUDRHP340UH", "description": "KIT,HUMID,AQUAPAK,340ML,H2O, ADPT", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "MSC351280", "description": "WIPE,GERM,MICRO-KILL TWO,6X6.7,160CT", "par": 2, "notes": "", "category": "Wipes & Washcloths"}, {"location": "Med Room", "itemNumber": "OTC083701", "description": "ACIDOPHILUS W/ PECTIN CAP 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTCM00020H", "description": "IBUPROFEN 200MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "MSCEX77EPZ", "description": "OPTIFOAM GENTLE EX, SACRUM, 7X7", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTCS0393C2", "description": "OXYMETAZOLONE 0.05% NSL SPRY 30ML", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC018105", "description": "MBO-ARTIFICIAL TEARS LUB OPH DRP 15ML", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "R-L62689H", "description": "MBO-JEVITY 1.5 CAL,UNFLAVORED,RTH,1500", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "MDSAICE16H", "description": "GEL PUMP,ACTIVICE, 16 OZ,1/EA", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "OTC450626", "description": "CALCIUM CITRATE 200MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "HCS4485", "description": "NEBULIZER,KIT,MASK,ADULT, 7' TUBING,SC", "par": 2, "notes": "", "category": "PPE"}, {"location": "Supply Closet", "itemNumber": "PRM256000H", "description": "SPONGE,DRAIN,NONWVN,4\"X4\",6PLY,STRL,LF", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "PRM21212CZ", "description": "GAUZE,SPONGE,2\"X2\",12PLY,NS,LF,200/PK", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC133245", "description": "MULTI-VITAMINMINERLUTEIN OPH TAB 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "EVSBH303712N", "description": "LINER,NATURAL,30X37,LIGHT,ROLL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "OTC003206", "description": "SIMETHICONE 125MG CHEW TAB 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "NONTP15I", "description": "TOOTHPASTE,SPARKLE FRESH,FLUORIDE,1.", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Housekeeping", "itemNumber": "POG000574460", "description": "SOAP,LIQUID,DISH,POT&PAN,DAWN,1G", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "MPH4540", "description": "METER,GLUCOSE,EVENCARE PROVIEW,PROF.USE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "POG000706721", "description": "LIQUID,DETERGENT,LAUNDRY,TIDE,SC,5GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Housekeeping", "itemNumber": "HHABSP1200F", "description": "ANTIBACTERIAL HAND SOAP, FOAM, 1200ML", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "MDSAICEGELH", "description": "GEL TUBE, ACTIVICE, 4 OZ,1/EA", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Supply Closet", "itemNumber": "MSC3248Z", "description": "GAUZE,BORDER,4\"X8\",2\"X6\"PAD,STERILE", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "ENT693OC", "description": "ACTIVE LIQ PROTEIN, ORANGE, 30 OZ BTL", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Supply Closet", "itemNumber": "CUR45246RBH", "description": "BANDAGE,FABRIC,CURAD,FNG/KNCKL, 20CT", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "CUR253590Z", "description": "DRESSING,GAUZE,XEROFORM,CURAD,5\"X9\",ST", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "MG3003", "description": "GLOVE,EXAM,NITRILE,MG ES, 300, L", "par": 2, "notes": "", "category": "Gloves"}, {"location": "Housekeeping", "itemNumber": "HHSP1200F", "description": "HAND SOAP, FOAM, 1200ML", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "MMMCFJ1270Z", "description": "JET,CUROS,LOOSE,5400/CS,270/BX,1EA", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Nurses Station", "itemNumber": "DYND80000", "description": "CUP,MEDICINE,GRAD,PLASTIC,1OZ", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "OTC040110", "description": "DOCUSATE SODIUM 100MG SG 1000/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "MSCEX44EPZ", "description": "OPTIFOAM GENTLE EX, BORDERED, 4X4", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "MSCEX99EPZ", "description": "OPTIFOAM GENTLE EX, SACRUM, 9X9", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC098130", "description": "ASPIRIN 81MG EC TAB 300/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC087601", "description": "VITAMIN D-3 25MCG 1000IU TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC272886", "description": "VITAMIN D-3 125MCG 5000IU TAB 110/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "MNK0005H", "description": "DRESSING,HONEY,THERAHONEY,.5 OZ TUBE", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "OTC6020650", "description": "FERROUS SULF 220MG/5ML ELX 16OZ", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC274252", "description": "FOLIC ACID 400 MCG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC084101", "description": "VITAMIN C 500MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "NON66160", "description": "60ML ENFIT SYRINGE, STERILE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC085601", "description": "VITAMIN B-12 100MCG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC44003", "description": "ASPIRIN 81MG EC TAB EASY-OPEN 300/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "NON245277", "description": "PAPER,TISSUE,FACIAL PREM 100/SHEETS/36BX", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "NICPTPOUCH20", "description": "POUCH,9.5X11\",PL&STK", "par": 2, "notes": "", "category": "Other"}, {"location": "Housekeeping", "itemNumber": "POG000510465", "description": "POWDER,STAIN REMOVER,REWASH/SOAKER,TIDE", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "West Hall", "itemNumber": "MSC095230", "description": "READYBATH, SHAMPOO, CAP, SCENTED, 1/PK", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Supply Closet", "itemNumber": "PRM086004", "description": "BANDAGE,COHESIVE,TAN,4X5YD,NS", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "HCS70004H", "description": "COMPRESSOR,NEBULIZER,AEROMIST COMPACT", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "HUN6100776", "description": "CLEANER,FLOOR,MAXX,DUAL,QUIK,FILL,2.5GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "MDS093943H", "description": "SOLUTION,PREP,POVIDONE IODINE,8 OZ BTL", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "PRM260001H", "description": "TAPE,PAPER,HYPOALLERGENIC,1X10YD", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "NON801780", "description": "STICK,ORANGE,4 1/2\"", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Nurses Station", "itemNumber": "NON02315", "description": "STRAW,PLASTC,7 3/4,WRPPED,FLEX,MINI PACK", "par": 2, "notes": "", "category": "Dining & Utensils"}, {"location": "Supply Closet", "itemNumber": "NON25710Z", "description": "PAD,NON-ADHERENT,3X4,STERILE,LF,1/PK", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "NON21454Z", "description": "PAD,ABDOMINAL,8\"X10\",STERILE,LF,1/PK", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "MSC092MBL02", "description": "LOTION, REMEDY ESSENTIALS, UNSC, 2OZ", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "OTC010210", "description": "ACETAMINOPHEN 325MG TAB 1000/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC078803", "description": "LORATADINE 10MG TAB 30/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "POG000706783", "description": "LIQUID,BLEACH,CLOROX,5GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Housekeeping", "itemNumber": "POG000706790", "description": "LIQUID,FABRIC SOFTENER,DOWNY,5 GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Housekeeping", "itemNumber": "HHSP1200G", "description": "HAND SOAP, GEL, 1200ML", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "West Hall", "itemNumber": "MMM1860S", "description": "MASK,RESP,N95,NIOSH APPROVED,SMALL", "par": 2, "notes": "", "category": "PPE"}, {"location": "West Hall", "itemNumber": "MG3002", "description": "GLOVE,EXAM,NITRILE,MG ES, 300, M", "par": 2, "notes": "", "category": "Gloves"}, {"location": "Housekeeping", "itemNumber": "POG000393822", "description": "LIQUID,DETERGENT,TIDE,STAIN/SOIL REMOVER", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "OTC009347", "description": "GUAIFENESIN 400MG+DM 20MG TAB 30/BX", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "PRM21412CZ", "description": "GAUZE,SPONGE,4X4,12PLY,NS,LF,200/PK", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "MSC095010", "description": "ANTIPER/DEODORANT,ROLL-ON,1.5 OZ", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Housekeeping", "itemNumber": "POG000711893", "description": "LIQUID,DETRGNT,DISH,CASCADE,ALL-TEMP,1G", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Housekeeping", "itemNumber": "NON26899", "description": "PAPER, TOILET ST CVR,1/2FO,REFILL,5000CS", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "HTP89001", "description": "DBM-KIT PREMIER SF NS 1PC 2.5\" CTF W/LNR", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "MSC281226", "description": "UNDERPAD,LIGHT,23X36,150/CS", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Nurses Station", "itemNumber": "NON03007", "description": "CUP,PLASTIC,7 OZ,TRANSLUCENT", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "MSC1500Z", "description": "WIPE,PROTECTANT,SKIN,SUREPREP", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Supply Closet", "itemNumber": "PRM260002H", "description": "TAPE,PAPER,HYPOALLERGENIC,2X10YD", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "NONPC1000", "description": "POUCH,MEDICATION,PILL, FOR NONSK0500", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "MSC13600A", "description": "UNDERWEAR,PROTECTIVE,EXTRA,XL,56-68", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Med Room", "itemNumber": "R-L62677", "description": "MBO-GLUCERNA1.2,UNFLAVORED,RTH,1000ML", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "DYNC1810", "description": "TRAY,FOLEY INSERTION,W/10ML SYRINGE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "DYND80321", "description": "BASIN,EMESIS,GOLD,500ML", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "West Hall", "itemNumber": "HH70W160", "description": "WIPES,HAND SANITIZING,SPECTRUM,70%,160CT", "par": 2, "notes": "", "category": "Wipes & Washcloths"}, {"location": "Med Room", "itemNumber": "HTP19253H", "description": "KIT NEW IMAGE UROSTOMY 2 1/4\"FLANGE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "MUP1266P", "description": "UNDERPAD,MODERATE,30X30,90/CS", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "West Hall", "itemNumber": "FITEXTRAMD", "description": "BRIEF,EXTRA,FITEXTRA,MD,32-44", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "West Hall", "itemNumber": "MSC13005A", "description": "UNDERWEAR,PROTECTIVE,MD,28-40", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Housekeeping", "itemNumber": "POG000075346", "description": "SANITIZER,CLEAN QUICK,PROFESSIONAL,1GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "OTC45501", "description": "SENNA S TABLET 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "MDS087004LFZ", "description": "BANDAGE,ELASTIC,MATRIX,4\"X5YD,SELF CLSR", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "DYND11756", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,16FR,10ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC086601", "description": "ACIDOPHILUS 5MG CAP 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "DYND11758", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,18FR,10ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "MNU10064H", "description": "PROSTAT LIQ PROTEIN, CHERRY SF, 30 O", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "West Hall", "itemNumber": "HTP7733", "description": "SPRAY,DEODORIZER,OSTOMY,8OZ,UNSCENTED", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "CUR001231H", "description": "TRIPLE ANTIBIOTIC OIN, 1 OZ TUBE", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "NON801778", "description": "BOARD,EMERY,4.25\"", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "MDS707555Z", "description": "TRAY,SUTURE REMOVAL,WIRE LITT SCISS", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "MSC263654", "description": "WIPE, WET, SCENTED, 8X10\", 48/PK", "par": 2, "notes": "", "category": "Wipes & Washcloths"}, {"location": "Med Room", "itemNumber": "OTC014283", "description": "CALAMINE LOTION 6OZ BT", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "MSC095361", "description": "LOTION, REMEDY ESSENTIALS, SCENTED, 2OZ", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Supply Closet", "itemNumber": "NONPC1001", "description": "POUCH,PILL CRUSHER", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "MDS136408H", "description": "ADHESIVE,DENTURE,SPARKLEFRESH,2.4 OZ", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "MSC93025EPH", "description": "GEL,SILVER,ANTIMICRO,SILVASORB,0.25 OZ", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "OTC08215", "description": "MBO-ULTRA LUBRICANT OPH DROPS 0.5 OZ", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "OTC074806", "description": "CALCIUM 600MG+VIT D 10MCG TAB 60/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "MSC9301EPH", "description": "GEL,SILVER,ANTIMICROB,SILVASORB,1.5 OZ", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "OTC095101", "description": "NAPROXEN SODIUM 220MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "West Hall", "itemNumber": "MSC351410AN", "description": "WIPE,GERM,MICROKILLBLEACH,6X5,150CT", "par": 2, "notes": "", "category": "Wipes & Washcloths"}, {"location": "Med Room", "itemNumber": "OTC92101", "description": "ASPIRIN 325MG EC TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "SSN100185Z", "description": "NEEDLE,HYPODERM,SAFETY,18GX1", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "R-L62681", "description": "MBO-JEVITY 1.5 CAL,UNFLAVORED,RTH,1000ML", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "OTC091136", "description": "ASPIRIN 81MG CHEW TAB ORANGE 36/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "R-L62675", "description": "GLUCERNA1.2,READYTOHANG,6EA/CS,1.CS", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "OTC066016", "description": "GUAIFENESIN 200MG+DM 20MG SF/AF LIQ 16OZ", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC40101", "description": "DOCUSATE SODIUM 100MG SG 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC523304", "description": "CARBAMIDE PEROXIDE 6.5% OTIC DRP 15ML", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "OTC423960", "description": "MAGNESIUM OXIDE 500MG TAB 100/BT", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "NON250314Z", "description": "STRIP,CLOSURE,WOUND,MEDI-STRIP,1/4X3", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "DYND11216", "description": "CATHETER,FOLEY,COUDE,LATEX,16FR,10ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "6PVC513H", "description": "DBD-GLOVE, EXAM, VINYL, PF, LF, CLEAR, L", "par": 2, "notes": "", "category": "Gloves"}, {"location": "Supply Closet", "itemNumber": "CUR005345", "description": "PETROLEUM JELLY, 5G FOIL PK, 864/CS", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Supply Closet", "itemNumber": "DYND80217", "description": "BEDPAN,PONTOON/STACK,GRAPHITE", "par": 2, "notes": "", "category": "Equipment & Furniture"}, {"location": "Supply Closet", "itemNumber": "NON25660Z", "description": "BANDAGE,ADHESIVE,FABRIC,1\"X3\",STRL,LF", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "HTP18133", "description": "POUCH,NI,2PC,2.25\"(57MM)FLANGE,TRANSP", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "POG000711879", "description": "LIQUID,CASCADE,CONCEN,CLOSED,7-05 2/1 GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "DYND20325", "description": "SYRINGE,PISTON,IRRIGATION,60ML,STERILE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "DYNJ05154LF", "description": "BNDG,ELSTC,MATRIX,STRL,4\"X5YD,LF,HOOK&LP", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "MSC092542", "description": "ZINC PASTE, REMEDY CLINICAL, 2OZ", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "SJQRM37211", "description": "AIRCURVE,10,VAUTO,W/HUMIDAIR,W/MODEM", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "PRM260201H", "description": "TAPE,TRANSPARENT,1X10YD,LF,12/BX", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "PRM260202H", "description": "TAPE,TRANSPARENT,2X10YD,LF,6/BX", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "DYND50211", "description": "TUBING, SUCTION, 3/16\" X 20\", SCALLOP", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "HCS1790", "description": "TUBING,ADAPTER,21\",HUMIDIFIER CONNECTOR", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "HCS4507", "description": "TUBING,OXYGEN,CRUSH RES,7',CLEAR,SC", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "West Hall", "itemNumber": "MSC53505", "description": "UNDERWEAR,PROTECTIVE,LG,HVY,40-56", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Supply Closet", "itemNumber": "SWD382491", "description": "ADAPTER,POWER,EPUMP,KANGAROO", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "West Hall", "itemNumber": "NON026315BL", "description": "BAG,PATIENT BELONG,DRWSTRG,20X20,BLUE", "par": 2, "notes": "", "category": "Other"}, {"location": "Supply Closet", "itemNumber": "DYNC1674", "description": "BAG,DRAINAGE,UROLOGY,2000ML,ANTI REFLUX", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "B-D302995Z", "description": "SYRINGE,10ML,LUER-LOK TIP,DISPOSABLE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "DOY362500", "description": "VIVONEX, UNFLAVORED, 8 OZ TETRA", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "West Hall", "itemNumber": "MSC53005", "description": "UNDERWEAR,PROTECTIVE,MD,HVY,28-40", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Supply Closet", "itemNumber": "HUD00540", "description": "KIT,HUMID,AQUAPAK, 540ML,H2O,W/ADPT", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "MDS093901", "description": "SWABSTICK,PVP-I,1/PK", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "POG000325359", "description": "DSINFECTNT,SPIC&SPAN,SPRY,CLOSED LOOP", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "CA255", "description": "DBD-NEEDLE,HYPODERM,SAFETY, 25GX1", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "DYNJ04058", "description": "DBD-REMOVER,STAPLE,SKIN,STERILE", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "SYRSI101292Z", "description": "DBQ-SYR W/NDLE,SAFETY,INSLN,1ML,29GX0.5\"", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "OTC018447H", "description": "DIPHENHYDR 1X25MG UD CPLT 200/BX", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Housekeeping", "itemNumber": "DVY04329", "description": "DISINFECTANT,QUAT,VIREX II 256,2X2L", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "MSCEX66EPZ", "description": "OPTIFOAM GENTLE EX, BORDERED, 6X6", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "R-L63176", "description": "NEPRO,VNLA,RDY TO DRINK,16EA/CS,8OZ", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "SSN100235Z", "description": "NEEDLE,HYPODERM,SAFETY,23GX1", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "HCS4482", "description": "NEBULIZER,KIT,T-MOUTHPIECE,7TUBE,SC", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "HCS4483", "description": "NEBULIZER,KIT,T-MOUTHPIECE,6RESER,7TUB", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "CTR000412", "description": "MOUTHWASH,ALCOHOL-FREE,2 OZ", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Med Room", "itemNumber": "MNU10064", "description": "PROSTAT LIQ PROTEIN, CHERRY SF, 30 OZ", "par": 2, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Med Room", "itemNumber": "CUR095010", "description": "MINERAL OIL LAXATIVE ENEMA 4.5OZ 24/CS", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Supply Closet", "itemNumber": "NON21444", "description": "GAUZE,SPONGE,4\"X4\",4PLY,STRL,LF", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Supply Closet", "itemNumber": "PRM21408C", "description": "GAUZE,SPONGE,4\"X4\",8PLY,NS,LF,4000/CS", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "MG100L", "description": "GLOVE, EXAM, NITRILE, MG ES, 100, L", "par": 2, "notes": "", "category": "Gloves"}, {"location": "West Hall", "itemNumber": "MMM1870PCSZ", "description": "MASK,AURA,SURG,PARTICULATERESPIRATOR", "par": 2, "notes": "", "category": "PPE"}, {"location": "Med Room", "itemNumber": "MDQ21135", "description": "HYDROCORTISONE CRM 1/32OZ 144/BX", "par": 2, "notes": "", "category": "Pharmacy & OTC"}, {"location": "Med Room", "itemNumber": "MDS032280", "description": "JELLY, LUBE, STERILE, FOIL PACK, 5G", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Housekeeping", "itemNumber": "POG897459086", "description": "LIQUID,DELIMER,LUSTER,PORFESSIONAL,1GL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Housekeeping", "itemNumber": "POG000315695", "description": "LIQUID,CLEANR,FLR/MULTI-SURFCE,SPICSPAN", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Housekeeping", "itemNumber": "NON303143", "description": "LINER,RED, PRINT,31X43,35 GAL,3 MIL,FLAT", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "West Hall", "itemNumber": "MPH191101", "description": "CREAM,SHAVE,MEDSPA,11 OZ", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Med Room", "itemNumber": "MDS705154", "description": "CONTAINER, SHARPS, 5 QT,CLEAR,WALL MOUNT", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "MSC092ZP04", "description": "PROTECTANT,ZINC,REMEDY ESSENTIALS,4OZ", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "Med Room", "itemNumber": "DYND11788", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,28FR,30ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "MORDNE6104LBR", "description": "CHAIR,SHOWER,PVC,COMMODE,STRAP,610LB,26W", "par": 2, "notes": "", "category": "Equipment & Furniture"}, {"location": "Housekeeping", "itemNumber": "POG000302503", "description": "CLEANER,COMET,W/BLEACH,RTU,3-40 3/1 GAL", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "MSC6204", "description": "SKINTEGRITY ECO HYDROGEL, 4 OZ. TUBE", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "Housekeeping", "itemNumber": "PRODISPMB", "description": "SPECTRUM PRO DISPENSER, MANUAL, BLACK", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "HUD8884719011", "description": "SPIROMETER,INCNTIV,VOLDYNE,2500ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "DYND11220", "description": "CATHETER,FOLEY,COUDE,LATEX,20FR,10ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "DYND11218", "description": "CATHETER,FOLEY,COUDE,LATEX,18FR,10ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "G1-301DPX1", "description": "COMMODE,DROP ARM,PADDED, 350 LB", "par": 2, "notes": "", "category": "Equipment & Furniture"}, {"location": "Nurses Station", "itemNumber": "NON00293", "description": "SPOON,PLASTIC,6 IN,WHITE,HVY WT", "par": 2, "notes": "", "category": "Dining & Utensils"}, {"location": "Housekeeping", "itemNumber": "POG610000011", "description": "CONCENTRATE,REMOVER,SOUR IRON,5-70 1/20", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Supply Closet", "itemNumber": "MDS10474", "description": "SCISSORS,BANDAGE,LISTER,3.5\"", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "West Hall", "itemNumber": "DYND70293", "description": "CONTAINER,DENTURE,W/LID,AQUA", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Supply Closet", "itemNumber": "DYND30330", "description": "CONTAINER,SPECIMEN,STERILE PATH,4OZ", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Housekeeping", "itemNumber": "FURN10100BLC", "description": "RECLINER, BLUERIDGE,NO TRAY,CAL117", "par": 2, "notes": "", "category": "Housekeeping & Paper"}, {"location": "Med Room", "itemNumber": "PBOBSP510C", "description": "CONTROL,INFLUENZA A&B,10/EA", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "DYND15200", "description": "COVER,URINARY DRAIN BAG,FABRIC,BLUE", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Med Room", "itemNumber": "DYND11790", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,30FR,30ML", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "MDS160664H", "description": "STOCKING,ANTI-EMBOLISM,KNEE,LRG REG,LF", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "ENFIT70550", "description": "SET,PUMP,SAFETY SPIKE +,ENFIT,MEDLINE", "par": 1, "notes": "", "category": "Nutrition & Enteral"}, {"location": "West Hall", "itemNumber": "DKLFNC3268Z", "description": "CLIPPER FINGERNAIL W/FILE", "par": 2, "notes": "", "category": "Personal Care"}, {"location": "Supply Closet", "itemNumber": "MDS160684H", "description": "STOCKING,ANTI-EMBOLISM,KNEE,XL REG,LF", "par": 2, "notes": "", "category": "Clinical Supplies"}, {"location": "Supply Closet", "itemNumber": "ENFIT70552", "description": "SET,PUMP,1000ML BAG,ENFIT,MEDLINE", "par": 1, "notes": "", "category": "Nutrition & Enteral"}, {"location": "Supply Closet", "itemNumber": "MDS087002LFZ", "description": "BANDAGE,ELASTIC,MATRIX,2\"X5YD,SELF CLSR", "par": 2, "notes": "", "category": "Wound Care"}, {"location": "Med Room", "itemNumber": "DYA1140", "description": "OINTMENT,WHITE,5 GRAM,FOIL PACK", "par": 2, "notes": "", "category": "Skin Care & Toiletries"}, {"location": "West Hall", "itemNumber": "FIT23005A", "description": "UNDERWEAR,PROTECTIVE,ULTRA,MD,28-40", "par": 2, "notes": "", "category": "Incontinence"}, {"location": "West Hall", "itemNumber": "FIT23505A", "description": "UNDERWEAR,PROTECTIVE,ULTRA,LG,40-56", "par": 2, "notes": "", "category": "Incontinence"}];
 
-const ITEMS = [{"location": "West Hall", "itemNumber": "MTB084Z", "description": "BRIEF,ULTRA,3XL,65-84,48/CS,12/BG", "par": 42, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM25865H", "description": "BANDAGE,GAUZE,4.5\"X4.1YD,STERILE,LF", "par": 29, "notes": ""}, {"location": "West Hall", "itemNumber": "FITEXTRALG", "description": "BRIEF,EXTRA,FITEXTRA,LG,44-56", "par": 7, "notes": ""}, {"location": "West Hall", "itemNumber": "FITEXTRAXLG", "description": "BRIEF,EXTRA,FITEXTRA,XLG,56-64", "par": 7, "notes": ""}, {"location": "Med Room", "itemNumber": "MPH4550Z", "description": "STRIP,GLUCOSE,EVENCARE PRO", "par": 7, "notes": ""}, {"location": "West Hall", "itemNumber": "FITEXTRAXXL", "description": "BRIEF,EXTRA,FITEXTRA,XXL,60-70", "par": 6, "notes": ""}, {"location": "West Hall", "itemNumber": "6PVC512", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,M", "par": 5, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM088004H", "description": "BANDAGE,COHESIVE,TAN,4X5YD,LF,NS", "par": 5, "notes": ""}, {"location": "West Hall", "itemNumber": "CRI4000", "description": "GOWN,COVER,SPP,ELSTWRIST,NCKTIE,YEL,REG", "par": 6, "notes": ""}, {"location": "West Hall", "itemNumber": "6PVC513", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,L", "par": 4, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00021H", "description": "TAB ACETAMINOPHEN 325MG 100/BT", "par": 4, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC095206", "description": "CLEANSER,SPRAY, REMEDY ESSENTIALS, 8OZ", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC095014H", "description": "CREAM,SHAVE,MEDSPA,1.5 OZ", "par": 5, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC030603", "description": "POLYETHYLENE GLYCOL PWD 17.9OZ BT", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "6PVC514", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,XL", "par": 3, "notes": ""}, {"location": "Housekeeping", "itemNumber": "EVSBH24338N", "description": "LINER,NATURAL,24X33,X LIGHT,ROLL", "par": 3, "notes": ""}, {"location": "Med Room", "itemNumber": "MNK0015H", "description": "DRESSING,HONEY,THERAHONEY,1.5 OZ TUBE", "par": 3, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L64628", "description": "MBO- JEVITY 1.5, UNFLAVORED, 8 OZ CARTON", "par": 3, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC3244Z", "description": "GAUZE,BORDER,4\"X4\",2.5\"X2.5\"PAD,STERILE", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "NON27378", "description": "MASK, LOOP, BLUE, LVL 1", "par": 3, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC002601", "description": "FERROUS SULFATE 325MG TAB 100/BT", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "CRI4001", "description": "GOWN,COVER,SPP,ELSTWRIST,NCKTIE,YEL,XL", "par": 4, "notes": ""}, {"location": "Supply Closet", "itemNumber": "UROECLIPSEH", "description": "COVERED BAG,DRAIN,ANTI-REFLUX TOW,2000ML", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "FITPLUSXLG", "description": "BRIEF,EXTRA,FITPLUS,XLG,56-64", "par": 4, "notes": ""}, {"location": "Med Room", "itemNumber": "HTD8162Z", "description": "SAFETY PEN NEEDLE, 31G, 6MM", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "FIT23WLXL", "description": "WOMENS UNDERWEAR,ULTRA,LG/XL,40-56", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "FITPLUSLG", "description": "BRIEF,EXTRA,FITPLUS,LG,44-56", "par": 4, "notes": ""}, {"location": "Med Room", "itemNumber": "MPHADJDEPTHZ", "description": "LANCET,SAFETY,23G,ADJ,PRESSURE", "par": 3, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM21408CZ", "description": "GAUZE,SPONGE,4X4,8PLY,NS,LF,200/PK", "par": 3, "notes": ""}, {"location": "West Hall", "itemNumber": "NON243277", "description": "PAPER,TISSUE,FACE,STAND,FLAT,90SHT/30BX", "par": 3, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM21208CZ", "description": "GAUZE,SPONGE,2X2,8PLY,NS,LF,200/PK", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC086406", "description": "MELATONIN 3MG TAB 60/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "NONPBM800N", "description": "PAPER,TOWEL,ROLL,STND, NAT, 8\"X800', 6CS", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC091401", "description": "VITAMIN B-12 1000MCG TAB 100/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MDS137015ZZ", "description": "BRUSH,HAIR,ADULT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "6PVC511", "description": "CA ONLY,GLOVE,EXAM,VINYL,PF,LF,CLEAR,S", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "PGA101H", "description": "HOLDER,EZP URINAL, HOOK&LOOP STRAP", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "BRN1333Z", "description": "RAZOR,TRIPLE BLADE,W/LUBE STRIP,PK OF 10", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FITPLUSXXL", "description": "BRIEF,EXTRA,FITPLUS,XXL,60-70", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00011H", "description": "SENNA-S TAB 60/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "RDI30296", "description": "SOLUTION,SALINE,IRRGATION,100ML,STRL", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FIT23WSM", "description": "WOMENS UNDERWEAR,ULTRA,SMALL/MED,28-40", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HUDRHUD39UZ", "description": "SALINE,.9 PCNT,3 ML,ADDIPAK,STERILE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MPHBAAAZ", "description": "BATTERY, ALKALINE, MEDCELL, 1.5V, AAA", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC050101", "description": "MULTI-VITAMIN TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC042101", "description": "DOCUSATE SODIUM 100MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "EVSBH404813N", "description": "LINER,NATURAL,40X48,LIGHT,ROLL", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HUDRHP340U", "description": "KIT,HUMID,AQUAPAK,340ML,H2O,W/ADPT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC84501", "description": "CRANBERRY 450MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC263754", "description": "WIPE, WET, SCENTED, 8X10\", 68/PK", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00004H", "description": "ASPIRIN 81MG CHEW ORANGE TAB 36/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "HH70G1000", "description": "HAND SANITIZER,GEL, SPECTRUM 70%, 1000ML", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "DYND80235S", "description": "URINAL,MALE,SUPREME", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00022H", "description": "TAB ACETAMINOPHEN 500MG 100/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FITPLUSMD", "description": "BRIEF,EXTRA,FITPLUS,MD,32-44", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC3222Z", "description": "GAUZE,BORDERED,2\" X 2\"(1\" X 1\"PAD)STRL", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "SNAPSECURE", "description": "SNAPSECURE FOLEY DEVICE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00003H", "description": "ASPIRIN 81MG EC TAB 120/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NONPC1000Z", "description": "POUCH,MEDICATION,PILL,F/PILL CRUSHER", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC3266Z", "description": "GAUZE,BORDER,6\"X6\",4\"X4\"PAD,STERILE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS093944H", "description": "SOLUTION,PREP,POVIDONE IODINE,4 OZ BTL", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC698112", "description": "BISACODYL 10MG SUPPOSITORY 12/BX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC786094", "description": "MELATONIN 5MG TAB 90/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC64916H", "description": "MILK OF MAGNESIA 16OZ BOTTLE", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "HHABSP1200G", "description": "ANTIBACTERIAL HAND SOAP, GEL, 1200ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC063412", "description": "MAGNESIUM OXIDE 400MG TAB 120/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC011001", "description": "MBO-ARTIFICIAL TEARS LUB OPH DROP 15ML", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "DYND80347", "description": "WASHBASIN,RECTANGULAR,GRAPHITE,6 QT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MEC37226", "description": "CLIPPER,NAIL,TOE,NO-FILE,LARGE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC079316", "description": "GUAIFENESIN 200MG/10ML SF/AF SOLN 16OZ", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON03009", "description": "CUP,PLASTIC,9 OZ,TRANSLUCENT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC223383", "description": "VITAMIN C 500MG TAB 250/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "SZM553243", "description": "SYSTEM,COMPRESSION,URGOK2,DUAL,REGULAR", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC533260", "description": "ZINC 50MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC074706", "description": "CALCIUM 600MG+VIT D 5MCG TAB 60/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POYTM1616SCS", "description": "BATH TIS,UNIV,2-PLY WHT 96RL/500", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDSR004907", "description": "SCISSORS, BLACK HANDLE, ECONOMY", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "XAPENS115NS", "description": "SYRINGE,PISTON,FLAT TOP,ENFIT TIP", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MEC37224", "description": "CLIPPER,NAIL,FINGER,NO-FILE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC143890", "description": "MAGNESIUM CITRATE ORAL SOLN CHERRY 10OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC000901", "description": "VITAMIN D3 50MCG(2000IU) SG 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HD8884719010H", "description": "SPIROMETER,INCNTIV,VOLDYNE,4000ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCS0673C2", "description": "ANTACID CALC CARB 500MG CHEW TAB 150/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC053101", "description": "MULTI-VITAMIN  MINERAL TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "BXT775659TH", "description": "MBO-SET,SPIKE,E-PUMP,ENPLUS,KANGAROO", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "COV84700207EH", "description": "TUBE,PUMP,SET,EXTENSION,ENFIT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS090735", "description": "PAD,PREP,ALCOHOL,STRL,MEDIUM,2-PLY", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC00042A", "description": "COUGH DROP CHERRY 30CT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC32410Z", "description": "GAUZE,BORDER,4\"X10\",(2X8\"PAD),STERILE", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "DYNC8522", "description": "BEDPAN,FRACTURE,GRAPHITE,24 EA", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC039733", "description": "OMEPRAZOLE MAG 20.6MG DR CAP 42/BX", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MDT825150", "description": "HOLDER,URINE DRAINAGE BAG,POLY/COT,EA", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC051281", "description": "FOLIC ACID 1000MCG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC091105", "description": "DBD-LIDOCAINE 4% PATCH 5/BX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC375086", "description": "LOPERAMIDE 2MG CPLT 24/BX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC092544", "description": "ZINC PASTE, REMEDY CLINICAL, 4OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC274170", "description": "CO Q-10 30MG CAP 30/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC00043A", "description": "COUGH DROP HONEY LEMON 30CT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "CPI36093616H", "description": "SOL,DAKIN .25%,1/2 STRENGTH,NO RETURN", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC44101", "description": "BISACODYL 5MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS4514", "description": "CANNULA,ADULT,SOFT-TOUCH,7TUBE,SC", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MPH4560", "description": "CONTROL,EVENCARE PRO, HI LO", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "CTR000413", "description": "MOUTHWASH,ALCOHOL FREE,4 OZ", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "DYND70000", "description": "MEDICINE CUP GRAD PLSTC 1OZ ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC176001N", "description": "SODIUM CHLORIDE 1GM TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MPHBAAZ", "description": "BATTERY, ALKALINE, MEDCELL, 1.5V, AA", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC030602", "description": "POLYETHYLENE GLYCOL PWD 8.3OZ BT", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON03010BAR", "description": "CUP,PLASTIC,10 OZ,GRADUATED", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00015H", "description": "CETIRIZINE 10MG TAB 30/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FITEXTRASM", "description": "BRIEF,EXTRA,FITEXTRA,SM,20-32", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON042000", "description": "TEASPOON,PLASTIC,5 IN,WHITE,STD WT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MDS136700", "description": "TOOTHBRUSH,DELUXE,IND. WRAPPED", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC240908", "description": "VITAMIN D-3 1250MCG 50,000IU TAB 30/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L64918", "description": "MBO-GLUCERNA,1.2,VANILLA,8OZ,CARTON", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC045101", "description": "SENNA TAB 100/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "BRN1312Z", "description": "RAZOR,TWIN BLADE,DISPOSABLE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM21450Z", "description": "PAD,ABDOMINAL,5\"X9\",ST,LF,25/BX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC068101", "description": "DIPHENHYDRAMINE 25MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC7312EP", "description": "DRESSING,ALGINATE,ROPE,MAXORB II,1\"X12\"", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON02325", "description": "STRAW,PLASTIC,7 3/4,WRAPPED,FLEX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "BRDFOL0101H", "description": "MBO-STABILIZER,CATHETER,FOLEY,STATLOCK", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS705153", "description": "CONTAINER,SHARPS,5 QT,RED,WALL MOUNT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "NON24506A", "description": "SURG N95 RESP, CONE, REGULAR, WHITE", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MDS136405Z", "description": "CLEANSER,DENTURE,TABLETS", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MMM8210SPECZ", "description": "MASK,RESP,N95,MED,INDUSTRIAL,NO", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "SWD763656", "description": "BAG SET,KANGAROO JOEY,1000ML", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "NON25815", "description": "PAPER,TOWEL,MULTIFOLD,NATURAL, 4000EA/CS", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS676", "description": "TUBING,ADAPTER,15\",HUMIDIFIER CONNECTOR", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC16001", "description": "MULTI-VITAMIN NEPHRO-VITE TAB 100/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "GOJ312708", "description": "SHAMPOO,BODY WASH,PROVON,NXT,1000ML", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC3236Z", "description": "GAUZE, BORDER, 3\"X6\", 1.5\"X4\"PAD,STERILE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON21450H", "description": "PAD,ABDOMINAL,5\"X9\",STERILE,LF,1/PK", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "NON24507AZ", "description": "SURG N95 RESP, CONE, SMALL, WHITE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC226681", "description": "VITAMIN B COMPLEX+VIT C 300MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "CUR0700RBH", "description": "BANDAGE,ADHSV,FABRIC,CURAD,ASSTD,100", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC214954", "description": "FISH OIL 1000MG SG 60/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC851019", "description": "VITAMIN B-1 100MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC279847", "description": "VITAMIN D-3 50MCG 2000IU TAB 250/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "EVSBH303710N", "description": "LINER,NATURAL,30X37,X LIGHT,ROLL", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HUDRHP340UH", "description": "KIT,HUMID,AQUAPAK,340ML,H2O, ADPT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC351280", "description": "WIPE,GERM,MICRO-KILL TWO,6X6.7,160CT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC083701", "description": "ACIDOPHILUS W/ PECTIN CAP 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCM00020H", "description": "IBUPROFEN 200MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSCEX77EPZ", "description": "OPTIFOAM GENTLE EX, SACRUM, 7X7", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTCS0393C2", "description": "OXYMETAZOLONE 0.05% NSL SPRY 30ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC018105", "description": "MBO-ARTIFICIAL TEARS LUB OPH DRP 15ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L62689H", "description": "MBO-JEVITY 1.5 CAL,UNFLAVORED,RTH,1500", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MDSAICE16H", "description": "GEL PUMP,ACTIVICE, 16 OZ,1/EA", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC450626", "description": "CALCIUM CITRATE 200MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS4485", "description": "NEBULIZER,KIT,MASK,ADULT, 7' TUBING,SC", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM256000H", "description": "SPONGE,DRAIN,NONWVN,4\"X4\",6PLY,STRL,LF", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM21212CZ", "description": "GAUZE,SPONGE,2\"X2\",12PLY,NS,LF,200/PK", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC133245", "description": "MULTI-VITAMINMINERLUTEIN OPH TAB 60/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "EVSBH303712N", "description": "LINER,NATURAL,30X37,LIGHT,ROLL", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC003206", "description": "SIMETHICONE 125MG CHEW TAB 60/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "NONTP15I", "description": "TOOTHPASTE,SPARKLE FRESH,FLUORIDE,1.", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000574460", "description": "SOAP,LIQUID,DISH,POT&PAN,DAWN,1G", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MPH4540", "description": "METER,GLUCOSE,EVENCARE PROVIEW,PROF.USE", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000706721", "description": "LIQUID,DETERGENT,LAUNDRY,TIDE,SC,5GL", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "HHABSP1200F", "description": "ANTIBACTERIAL HAND SOAP, FOAM, 1200ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MDSAICEGELH", "description": "GEL TUBE, ACTIVICE, 4 OZ,1/EA", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC3248Z", "description": "GAUZE,BORDER,4\"X8\",2\"X6\"PAD,STERILE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "ENT693OC", "description": "ACTIVE LIQ PROTEIN, ORANGE, 30 OZ BTL", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "CUR45246RBH", "description": "BANDAGE,FABRIC,CURAD,FNG/KNCKL, 20CT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "CUR253590Z", "description": "DRESSING,GAUZE,XEROFORM,CURAD,5\"X9\",ST", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MG3003", "description": "GLOVE,EXAM,NITRILE,MG ES, 300, L", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "HHSP1200F", "description": "HAND SOAP, FOAM, 1200ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MMMCFJ1270Z", "description": "JET,CUROS,LOOSE,5400/CS,270/BX,1EA", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "DYND80000", "description": "CUP,MEDICINE,GRAD,PLASTIC,1OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC040110", "description": "DOCUSATE SODIUM 100MG SG 1000/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSCEX44EPZ", "description": "OPTIFOAM GENTLE EX, BORDERED, 4X4", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSCEX99EPZ", "description": "OPTIFOAM GENTLE EX, SACRUM, 9X9", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC098130", "description": "ASPIRIN 81MG EC TAB 300/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC087601", "description": "VITAMIN D-3 25MCG 1000IU TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC272886", "description": "VITAMIN D-3 125MCG 5000IU TAB 110/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MNK0005H", "description": "DRESSING,HONEY,THERAHONEY,.5 OZ TUBE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC6020650", "description": "FERROUS SULF 220MG/5ML ELX 16OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC274252", "description": "FOLIC ACID 400 MCG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC084101", "description": "VITAMIN C 500MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "NON66160", "description": "60ML ENFIT SYRINGE, STERILE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC085601", "description": "VITAMIN B-12 100MCG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC44003", "description": "ASPIRIN 81MG EC TAB EASY-OPEN 300/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "NON245277", "description": "PAPER,TISSUE,FACIAL PREM 100/SHEETS/36BX", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NICPTPOUCH20", "description": "POUCH,9.5X11\",PL&STK", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000510465", "description": "POWDER,STAIN REMOVER,REWASH/SOAKER,TIDE", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC095230", "description": "READYBATH, SHAMPOO, CAP, SCENTED, 1/PK", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM086004", "description": "BANDAGE,COHESIVE,TAN,4X5YD,NS", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS70004H", "description": "COMPRESSOR,NEBULIZER,AEROMIST COMPACT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "HUN6100776", "description": "CLEANER,FLOOR,MAXX,DUAL,QUIK,FILL,2.5GL", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS093943H", "description": "SOLUTION,PREP,POVIDONE IODINE,8 OZ BTL", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM260001H", "description": "TAPE,PAPER,HYPOALLERGENIC,1X10YD", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON801780", "description": "STICK,ORANGE,4 1/2\"", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON02315", "description": "STRAW,PLASTC,7 3/4,WRPPED,FLEX,MINI PACK", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON25710Z", "description": "PAD,NON-ADHERENT,3X4,STERILE,LF,1/PK", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON21454Z", "description": "PAD,ABDOMINAL,8\"X10\",STERILE,LF,1/PK", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC092MBL02", "description": "LOTION, REMEDY ESSENTIALS, UNSC, 2OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC010210", "description": "ACETAMINOPHEN 325MG TAB 1000/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC078803", "description": "LORATADINE 10MG TAB 30/BT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000706783", "description": "LIQUID,BLEACH,CLOROX,5GL", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000706790", "description": "LIQUID,FABRIC SOFTENER,DOWNY,5 GL", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "HHSP1200G", "description": "HAND SOAP, GEL, 1200ML", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MMM1860S", "description": "MASK,RESP,N95,NIOSH APPROVED,SMALL", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MG3002", "description": "GLOVE,EXAM,NITRILE,MG ES, 300, M", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000393822", "description": "LIQUID,DETERGENT,TIDE,STAIN/SOIL REMOVER", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC009347", "description": "GUAIFENESIN 400MG+DM 20MG TAB 30/BX", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM21412CZ", "description": "GAUZE,SPONGE,4X4,12PLY,NS,LF,200/PK", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC095010", "description": "ANTIPER/DEODORANT,ROLL-ON,1.5 OZ", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000711893", "description": "LIQUID,DETRGNT,DISH,CASCADE,ALL-TEMP,1G", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "NON26899", "description": "PAPER, TOILET ST CVR,1/2FO,REFILL,5000CS", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "HTP89001", "description": "DBM-KIT PREMIER SF NS 1PC 2.5\" CTF W/LNR", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSC281226", "description": "UNDERPAD,LIGHT,23X36,150/CS", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON03007", "description": "CUP,PLASTIC,7 OZ,TRANSLUCENT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC1500Z", "description": "WIPE,PROTECTANT,SKIN,SUREPREP", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM260002H", "description": "TAPE,PAPER,HYPOALLERGENIC,2X10YD", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NONPC1000", "description": "POUCH,MEDICATION,PILL, FOR NONSK0500", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC13600A", "description": "UNDERWEAR,PROTECTIVE,EXTRA,XL,56-68", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L62677", "description": "MBO-GLUCERNA1.2,UNFLAVORED,RTH,1000ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYNC1810", "description": "TRAY,FOLEY INSERTION,W/10ML SYRINGE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYND80321", "description": "BASIN,EMESIS,GOLD,500ML", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "HH70W160", "description": "WIPES,HAND SANITIZING,SPECTRUM,70%,160CT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "HTP19253H", "description": "KIT NEW IMAGE UROSTOMY 2 1/4\"FLANGE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MUP1266P", "description": "UNDERPAD,MODERATE,30X30,90/CS", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FITEXTRAMD", "description": "BRIEF,EXTRA,FITEXTRA,MD,32-44", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC13005A", "description": "UNDERWEAR,PROTECTIVE,MD,28-40", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000075346", "description": "SANITIZER,CLEAN QUICK,PROFESSIONAL,1GL", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC45501", "description": "SENNA S TABLET 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS087004LFZ", "description": "BANDAGE,ELASTIC,MATRIX,4\"X5YD,SELF CLSR", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11756", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,16FR,10ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC086601", "description": "ACIDOPHILUS 5MG CAP 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11758", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,18FR,10ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MNU10064H", "description": "PROSTAT LIQ PROTEIN, CHERRY SF, 30 O", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "HTP7733", "description": "SPRAY,DEODORIZER,OSTOMY,8OZ,UNSCENTED", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "CUR001231H", "description": "TRIPLE ANTIBIOTIC OIN, 1 OZ TUBE", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "NON801778", "description": "BOARD,EMERY,4.25\"", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MDS707555Z", "description": "TRAY,SUTURE REMOVAL,WIRE LITT SCISS", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC263654", "description": "WIPE, WET, SCENTED, 8X10\", 48/PK", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC014283", "description": "CALAMINE LOTION 6OZ BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC095361", "description": "LOTION, REMEDY ESSENTIALS, SCENTED, 2OZ", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NONPC1001", "description": "POUCH,PILL CRUSHER", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MDS136408H", "description": "ADHESIVE,DENTURE,SPARKLEFRESH,2.4 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC93025EPH", "description": "GEL,SILVER,ANTIMICRO,SILVASORB,0.25 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC08215", "description": "MBO-ULTRA LUBRICANT OPH DROPS 0.5 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC074806", "description": "CALCIUM 600MG+VIT D 10MCG TAB 60/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC9301EPH", "description": "GEL,SILVER,ANTIMICROB,SILVASORB,1.5 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC095101", "description": "NAPROXEN SODIUM 220MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC351410AN", "description": "WIPE,GERM,MICROKILLBLEACH,6X5,150CT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC92101", "description": "ASPIRIN 325MG EC TAB 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "SSN100185Z", "description": "NEEDLE,HYPODERM,SAFETY,18GX1", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L62681", "description": "MBO-JEVITY 1.5 CAL,UNFLAVORED,RTH,1000ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC091136", "description": "ASPIRIN 81MG CHEW TAB ORANGE 36/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L62675", "description": "GLUCERNA1.2,READYTOHANG,6EA/CS,1.CS", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC066016", "description": "GUAIFENESIN 200MG+DM 20MG SF/AF LIQ 16OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC40101", "description": "DOCUSATE SODIUM 100MG SG 100/BT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC523304", "description": "CARBAMIDE PEROXIDE 6.5% OTIC DRP 15ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC423960", "description": "MAGNESIUM OXIDE 500MG TAB 100/BT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON250314Z", "description": "STRIP,CLOSURE,WOUND,MEDI-STRIP,1/4X3", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11216", "description": "CATHETER,FOLEY,COUDE,LATEX,16FR,10ML", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "6PVC513H", "description": "DBD-GLOVE, EXAM, VINYL, PF, LF, CLEAR, L", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "CUR005345", "description": "PETROLEUM JELLY, 5G FOIL PK, 864/CS", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYND80217", "description": "BEDPAN,PONTOON/STACK,GRAPHITE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON25660Z", "description": "BANDAGE,ADHESIVE,FABRIC,1\"X3\",STRL,LF", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HTP18133", "description": "POUCH,NI,2PC,2.25\"(57MM)FLANGE,TRANSP", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000711879", "description": "LIQUID,CASCADE,CONCEN,CLOSED,7-05 2/1 GL", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND20325", "description": "SYRINGE,PISTON,IRRIGATION,60ML,STERILE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYNJ05154LF", "description": "BNDG,ELSTC,MATRIX,STRL,4\"X5YD,LF,HOOK&LP", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC092542", "description": "ZINC PASTE, REMEDY CLINICAL, 2OZ", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "SJQRM37211", "description": "AIRCURVE,10,VAUTO,W/HUMIDAIR,W/MODEM", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM260201H", "description": "TAPE,TRANSPARENT,1X10YD,LF,12/BX", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM260202H", "description": "TAPE,TRANSPARENT,2X10YD,LF,6/BX", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYND50211", "description": "TUBING, SUCTION, 3/16\" X 20\", SCALLOP", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS1790", "description": "TUBING,ADAPTER,21\",HUMIDIFIER CONNECTOR", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS4507", "description": "TUBING,OXYGEN,CRUSH RES,7',CLEAR,SC", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC53505", "description": "UNDERWEAR,PROTECTIVE,LG,HVY,40-56", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "SWD382491", "description": "ADAPTER,POWER,EPUMP,KANGAROO", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "NON026315BL", "description": "BAG,PATIENT BELONG,DRWSTRG,20X20,BLUE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYNC1674", "description": "BAG,DRAINAGE,UROLOGY,2000ML,ANTI REFLUX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "B-D302995Z", "description": "SYRINGE,10ML,LUER-LOK TIP,DISPOSABLE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DOY362500", "description": "VIVONEX, UNFLAVORED, 8 OZ TETRA", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MSC53005", "description": "UNDERWEAR,PROTECTIVE,MD,HVY,28-40", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HUD00540", "description": "KIT,HUMID,AQUAPAK, 540ML,H2O,W/ADPT", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS093901", "description": "SWABSTICK,PVP-I,1/PK", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000325359", "description": "DSINFECTNT,SPIC&SPAN,SPRY,CLOSED LOOP", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "CA255", "description": "DBD-NEEDLE,HYPODERM,SAFETY, 25GX1", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYNJ04058", "description": "DBD-REMOVER,STAPLE,SKIN,STERILE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "SYRSI101292Z", "description": "DBQ-SYR W/NDLE,SAFETY,INSLN,1ML,29GX0.5\"", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "OTC018447H", "description": "DIPHENHYDR 1X25MG UD CPLT 200/BX", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "DVY04329", "description": "DISINFECTANT,QUAT,VIREX II 256,2X2L", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MSCEX66EPZ", "description": "OPTIFOAM GENTLE EX, BORDERED, 6X6", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "R-L63176", "description": "NEPRO,VNLA,RDY TO DRINK,16EA/CS,8OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "SSN100235Z", "description": "NEEDLE,HYPODERM,SAFETY,23GX1", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS4482", "description": "NEBULIZER,KIT,T-MOUTHPIECE,7TUBE,SC", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HCS4483", "description": "NEBULIZER,KIT,T-MOUTHPIECE,6RESER,7TUB", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "CTR000412", "description": "MOUTHWASH,ALCOHOL-FREE,2 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MNU10064", "description": "PROSTAT LIQ PROTEIN, CHERRY SF, 30 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "CUR095010", "description": "MINERAL OIL LAXATIVE ENEMA 4.5OZ 24/CS", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "NON21444", "description": "GAUZE,SPONGE,4\"X4\",4PLY,STRL,LF", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "PRM21408C", "description": "GAUZE,SPONGE,4\"X4\",8PLY,NS,LF,4000/CS", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MG100L", "description": "GLOVE, EXAM, NITRILE, MG ES, 100, L", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MMM1870PCSZ", "description": "MASK,AURA,SURG,PARTICULATERESPIRATOR", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MDQ21135", "description": "HYDROCORTISONE CRM 1/32OZ 144/BX", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MDS032280", "description": "JELLY, LUBE, STERILE, FOIL PACK, 5G", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG897459086", "description": "LIQUID,DELIMER,LUSTER,PORFESSIONAL,1GL", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000315695", "description": "LIQUID,CLEANR,FLR/MULTI-SURFCE,SPICSPAN", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "NON303143", "description": "LINER,RED, PRINT,31X43,35 GAL,3 MIL,FLAT", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "MPH191101", "description": "CREAM,SHAVE,MEDSPA,11 OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MDS705154", "description": "CONTAINER, SHARPS, 5 QT,CLEAR,WALL MOUNT", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC092ZP04", "description": "PROTECTANT,ZINC,REMEDY ESSENTIALS,4OZ", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11788", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,28FR,30ML", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "MORDNE6104LBR", "description": "CHAIR,SHOWER,PVC,COMMODE,STRAP,610LB,26W", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG000302503", "description": "CLEANER,COMET,W/BLEACH,RTU,3-40 3/1 GAL", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "MSC6204", "description": "SKINTEGRITY ECO HYDROGEL, 4 OZ. TUBE", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "PRODISPMB", "description": "SPECTRUM PRO DISPENSER, MANUAL, BLACK", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "HUD8884719011", "description": "SPIROMETER,INCNTIV,VOLDYNE,2500ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11220", "description": "CATHETER,FOLEY,COUDE,LATEX,20FR,10ML", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11218", "description": "CATHETER,FOLEY,COUDE,LATEX,18FR,10ML", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "G1-301DPX1", "description": "COMMODE,DROP ARM,PADDED, 350 LB", "par": 2, "notes": ""}, {"location": "Nurses Station", "itemNumber": "NON00293", "description": "SPOON,PLASTIC,6 IN,WHITE,HVY WT", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "POG610000011", "description": "CONCENTRATE,REMOVER,SOUR IRON,5-70 1/20", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS10474", "description": "SCISSORS,BANDAGE,LISTER,3.5\"", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "DYND70293", "description": "CONTAINER,DENTURE,W/LID,AQUA", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYND30330", "description": "CONTAINER,SPECIMEN,STERILE PATH,4OZ", "par": 2, "notes": ""}, {"location": "Housekeeping", "itemNumber": "FURN10100BLC", "description": "RECLINER, BLUERIDGE,NO TRAY,CAL117", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "PBOBSP510C", "description": "CONTROL,INFLUENZA A&B,10/EA", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "DYND15200", "description": "COVER,URINARY DRAIN BAG,FABRIC,BLUE", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYND11790", "description": "CATHETER,FOLEY,SILI-ELAST,LTX,30FR,30ML", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS160664H", "description": "STOCKING,ANTI-EMBOLISM,KNEE,LRG REG,LF", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "ENFIT70550", "description": "SET,PUMP,SAFETY SPIKE +,ENFIT,MEDLINE", "par": 1, "notes": ""}, {"location": "West Hall", "itemNumber": "DKLFNC3268Z", "description": "CLIPPER FINGERNAIL W/FILE", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS160684H", "description": "STOCKING,ANTI-EMBOLISM,KNEE,XL REG,LF", "par": 2, "notes": ""}, {"location": "Supply Closet", "itemNumber": "ENFIT70552", "description": "SET,PUMP,1000ML BAG,ENFIT,MEDLINE", "par": 1, "notes": ""}, {"location": "Supply Closet", "itemNumber": "MDS087002LFZ", "description": "BANDAGE,ELASTIC,MATRIX,2\"X5YD,SELF CLSR", "par": 2, "notes": ""}, {"location": "Med Room", "itemNumber": "DYA1140", "description": "OINTMENT,WHITE,5 GRAM,FOIL PACK", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FIT23005A", "description": "UNDERWEAR,PROTECTIVE,ULTRA,MD,28-40", "par": 2, "notes": ""}, {"location": "West Hall", "itemNumber": "FIT23505A", "description": "UNDERWEAR,PROTECTIVE,ULTRA,LG,40-56", "par": 2, "notes": ""}];
 
-// State
-let state = {
-  view: 'locations',  // locations | items | summary
-  currentLocation: null,
-  statuses: {},      // itemNumber -> 'full' | 'low' | 'empty'
-  search: '',
-  filter: 'all'       // all | pending | low | empty
+const CATEGORY_COLORS = {
+  'Incontinence': '#2980b9',
+  'Gloves': '#27ae60',
+  'Wipes & Washcloths': '#e67e22',
+  'PPE': '#8e44ad',
+  'Wound Care': '#e74c3c',
+  'Pharmacy & OTC': '#16a085',
+  'Nutrition & Enteral': '#d35400',
+  'Skin Care & Toiletries': '#2c3e50',
+  'Personal Care': '#2980b9',
+  'Clinical Supplies': '#27ae60',
+  'Dining & Utensils': '#e67e22',
+  'Housekeeping & Paper': '#8e44ad',
+  'Equipment & Furniture': '#e74c3c',
+  'Other': '#16a085',
 };
 
-// Load saved state from memory (sessionStorage alternative)
-try {
-  const saved = window.__savedState;
-  if (saved) state.statuses = saved;
-} catch(e) {}
+let currentView = 'locations';
+let selectedLocation = null;
+let statuses = {};
+let filteredItems = [];
+let searchQuery = '';
+let selectedCategory = null;
 
-function saveState() {
-  window.__savedState = state.statuses;
+function initializeApp() {
+  loadStatuses();
+  renderLocations();
+  updateProgress();
 }
 
-// Group items by location
-const LOCATIONS = {};
-ITEMS.forEach(item => {
-  if (!LOCATIONS[item.location]) LOCATIONS[item.location] = [];
-  LOCATIONS[item.location].push(item);
-});
+function loadStatuses() {
+  const saved = localStorage.getItem('supplyOrderStatuses');
+  statuses = saved ? JSON.parse(saved) : {};
+}
 
-// Location display order
-const LOC_ORDER = ['West Hall', 'Med Room', 'Supply Closet', 'Nurses Station', 'Housekeeping', 'Unassigned'];
+function saveStatuses() {
+  localStorage.setItem('supplyOrderStatuses', JSON.stringify(statuses));
+  updateProgress();
+}
 
-function getLocationStats(loc) {
-  const items = LOCATIONS[loc] || [];
-  let full = 0, low = 0, empty = 0, pending = 0;
-  items.forEach(item => {
-    const s = state.statuses[item.itemNumber];
-    if (s === 'full') full++;
-    else if (s === 'low') low++;
-    else if (s === 'empty') empty++;
-    else pending++;
+function getLocationItems(location) {
+  return ITEMS.filter(item => item.location === location).sort((a, b) => a.description.localeCompare(b.description));
+}
+
+function getLocationCategories(location) {
+  const items = getLocationItems(location);
+  const categories = new Set(items.map(item => item.category));
+  return Array.from(categories).sort();
+}
+
+function renderLocations() {
+  const locations = [...new Set(ITEMS.map(item => item.location))];
+  const html = locations.map(location => {
+    const items = getLocationItems(location);
+    const fullCount = items.filter(item => getItemStatus(item.itemNumber) === 'full').length;
+    const lowCount = items.filter(item => getItemStatus(item.itemNumber) === 'low').length;
+    const emptyCount = items.filter(item => getItemStatus(item.itemNumber) === 'empty').length;
+    const uncountedCount = items.length - fullCount - lowCount - emptyCount;
+    
+    let badge = '';
+    if (uncountedCount > 0) {
+      badge = `<div class="badge badge-pending">${uncountedCount} pending</div>`;
+    } else if (emptyCount > 0) {
+      badge = `<div class="badge badge-done">${emptyCount} to order</div>`;
+    } else {
+      badge = `<div class="badge badge-done">Complete</div>`;
+    }
+
+    return `
+      <div class="location-card" onclick="selectLocation('${location}')">
+        <div>
+          <div class="location-name">${location}</div>
+          <div class="location-count">${items.length} items</div>
+        </div>
+        <div class="location-badge">
+          ${badge}
+          <div class="chevron">›</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('locations').innerHTML = html;
+}
+
+function selectLocation(location) {
+  selectedLocation = location;
+  selectedCategory = null;
+  searchQuery = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('mainView').style.display = 'none';
+  document.getElementById('itemView').style.display = 'block';
+  document.getElementById('summaryView').style.display = 'none';
+  document.getElementById('locationTitle').textContent = location;
+  renderCategoryPills();
+  renderItems();
+  updateItemProgress();
+}
+
+function renderCategoryPills() {
+  const categories = getLocationCategories(selectedLocation);
+  const html = categories.map(cat => {
+    const count = getLocationItems(selectedLocation).filter(item => item.category === cat).length;
+    return `<div class="category-pill${selectedCategory === cat ? ' active' : ''}" onclick="selectCategory('${cat}')">${cat} (${count})</div>`;
+  }).join('');
+  document.getElementById('categoryPills').innerHTML = html;
+}
+
+function selectCategory(category) {
+  selectedCategory = selectedCategory === category ? null : category;
+  renderCategoryPills();
+  renderItems();
+}
+
+function renderItems() {
+  const items = getLocationItems(selectedLocation);
+  let filtered = items;
+
+  if (searchQuery) {
+    filtered = filtered.filter(item => 
+      item.description.toUpperCase().includes(searchQuery.toUpperCase()) ||
+      item.itemNumber.toUpperCase().includes(searchQuery.toUpperCase())
+    );
+  }
+
+  if (selectedCategory) {
+    filtered = filtered.filter(item => item.category === selectedCategory);
+  }
+
+  // Group by category
+  const grouped = {};
+  filtered.forEach(item => {
+    if (!grouped[item.category]) {
+      grouped[item.category] = [];
+    }
+    grouped[item.category].push(item);
   });
-  return { full, low, empty, pending, total: items.length };
+
+  // Sort items within each category
+  for (const cat in grouped) {
+    grouped[cat].sort((a, b) => a.description.localeCompare(b.description));
+  }
+
+  let html = '';
+  for (const category of Object.keys(grouped).sort()) {
+    const categoryItems = grouped[category];
+    const countedItems = categoryItems.filter(item => getItemStatus(item.itemNumber) !== null).length;
+    const color = CATEGORY_COLORS[category] || '#999';
+
+    html += `<div class="category-section" data-category="${category}">
+      <div class="category-header" onclick="toggleCategory(this)">
+        <div class="category-header-left">
+          <div class="category-title">${category}</div>
+          <div class="category-progress">${countedItems}/${categoryItems.length} counted</div>
+        </div>
+        <div class="category-chevron">▼</div>
+      </div>
+      <div class="category-items">
+        ${categoryItems.map(item => renderItemCard(item)).join('')}
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('itemsContainer').innerHTML = html;
 }
 
-function getOverallStats() {
-  let full = 0, low = 0, empty = 0, pending = 0;
-  ITEMS.forEach(item => {
-    const s = state.statuses[item.itemNumber];
-    if (s === 'full') full++;
-    else if (s === 'low') low++;
-    else if (s === 'empty') empty++;
-    else pending++;
-  });
-  return { full, low, empty, pending, total: ITEMS.length };
+function toggleCategory(header) {
+  const section = header.parentElement;
+  section.classList.toggle('collapsed');
 }
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
+function renderItemCard(item) {
+  const status = getItemStatus(item.itemNumber);
+  const isSelected = status ? ' selected' : '';
+
+  return `
+    <div class="item-card">
+      <div class="item-number">${item.itemNumber}</div>
+      <div class="item-desc">${item.description}</div>
+      <div class="item-par">Par: ${item.par}</div>
+      ${item.notes ? `<div class="item-notes">${item.notes}</div>` : ''}
+      <div class="status-btns">
+        <button class="status-btn full${status === 'full' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'full')">Full</button>
+        <button class="status-btn low${status === 'low' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'low')">Low</button>
+        <button class="status-btn empty${status === 'empty' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'empty')">Empty</button>
+      </div>
+    </div>
+  `;
 }
 
-function setStatus(itemNumber, status) {
-  if (state.statuses[itemNumber] === status) {
-    delete state.statuses[itemNumber];  // toggle off
+function getItemStatus(itemNumber) {
+  return statuses[itemNumber] || null;
+}
+
+function setItemStatus(itemNumber, status) {
+  if (statuses[itemNumber] === status) {
+    delete statuses[itemNumber];
   } else {
-    state.statuses[itemNumber] = status;
+    statuses[itemNumber] = status;
   }
-  saveState();
-  render();
+  saveStatuses();
+  renderItems();
+  updateItemProgress();
 }
 
-function markAllInLocation(loc, status) {
-  const items = LOCATIONS[loc] || [];
-  items.forEach(item => {
-    if (!state.statuses[item.itemNumber]) {
-      state.statuses[item.itemNumber] = status;
-    }
+function markAllAsStatus(status) {
+  const items = getLocationItems(selectedLocation);
+  let filtered = items;
+
+  if (searchQuery) {
+    filtered = filtered.filter(item => 
+      item.description.toUpperCase().includes(searchQuery.toUpperCase()) ||
+      item.itemNumber.toUpperCase().includes(searchQuery.toUpperCase())
+    );
+  }
+
+  if (selectedCategory) {
+    filtered = filtered.filter(item => item.category === selectedCategory);
+  }
+
+  filtered.forEach(item => {
+    statuses[item.itemNumber] = status;
   });
-  saveState();
-  render();
-  showToast('Unmarked items set to ' + status.toUpperCase());
+
+  saveStatuses();
+  renderItems();
+  updateItemProgress();
 }
 
-function getOrderItems() {
-  const orderItems = [];
-  ITEMS.forEach(item => {
-    const s = state.statuses[item.itemNumber];
-    if (s === 'low') {
-      orderItems.push({ ...item, orderQty: Math.ceil(item.par * 0.5), status: 'low' });
-    } else if (s === 'empty') {
-      orderItems.push({ ...item, orderQty: item.par, status: 'empty' });
-    }
+function resetAllStatuses() {
+  const items = getLocationItems(selectedLocation);
+  let filtered = items;
+
+  if (searchQuery) {
+    filtered = filtered.filter(item => 
+      item.description.toUpperCase().includes(searchQuery.toUpperCase()) ||
+      item.itemNumber.toUpperCase().includes(searchQuery.toUpperCase())
+    );
+  }
+
+  if (selectedCategory) {
+    filtered = filtered.filter(item => item.category === selectedCategory);
+  }
+
+  filtered.forEach(item => {
+    delete statuses[item.itemNumber];
   });
-  return orderItems;
+
+  saveStatuses();
+  renderItems();
+  updateItemProgress();
 }
 
-function exportCSV() {
-  const orderItems = getOrderItems();
-  if (orderItems.length === 0) {
-    showToast('Nothing to order!');
-    return;
-  }
-  let csv = 'Location,Item Number,Description,Par,Status,Order Qty\n';
-  orderItems.forEach(item => {
-    const desc = item.description.replace(/,/g, ';');
-    csv += item.location + ',' + item.itemNumber + ',"' + desc + '",' + item.par + ',' + item.status.toUpperCase() + ',' + item.orderQty + '\n';
-  });
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const today = new Date().toISOString().split('T')[0];
-  a.download = 'MorningStar_Order_' + today + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('Order exported!');
+function updateItemProgress() {
+  const items = getLocationItems(selectedLocation);
+  const counted = items.filter(item => getItemStatus(item.itemNumber) !== null).length;
+  const percent = Math.round((counted / items.length) * 100);
+  document.getElementById('itemProgressFill').style.width = percent + '%';
 }
 
-function resetAll() {
-  if (confirm('Clear all counts and start over?')) {
-    state.statuses = {};
-    saveState();
-    state.view = 'locations';
-    render();
-    showToast('All counts cleared');
-  }
+function updateProgress() {
+  const total = ITEMS.length;
+  const counted = Object.keys(statuses).length;
+  const percent = Math.round((counted / total) * 100);
+  document.getElementById('progressFill').style.width = percent + '%';
 }
 
-// ═══════════════════════════════════════════════════════
-// RENDER
-// ═══════════════════════════════════════════════════════
-
-function render() {
-  const app = document.getElementById('app');
-
-  if (state.view === 'locations') {
-    renderLocations(app);
-  } else if (state.view === 'items') {
-    renderItems(app);
-  } else if (state.view === 'summary') {
-    renderSummary(app);
+function backToLocations() {
+  if (currentView === 'items') {
+    currentView = 'locations';
+    selectedLocation = null;
+    selectedCategory = null;
+    searchQuery = '';
+    document.getElementById('mainView').style.display = 'block';
+    document.getElementById('itemView').style.display = 'none';
+    document.getElementById('summaryView').style.display = 'none';
+    renderLocations();
+  } else if (currentView === 'summary') {
+    currentView = 'locations';
+    document.getElementById('mainView').style.display = 'block';
+    document.getElementById('itemView').style.display = 'none';
+    document.getElementById('summaryView').style.display = 'none';
+    renderLocations();
   }
 }
 
-function renderLocations(app) {
-  const stats = getOverallStats();
-  const pct = Math.round(((stats.total - stats.pending) / stats.total) * 100);
+function showSummary() {
+  currentView = 'summary';
+  document.getElementById('mainView').style.display = 'none';
+  document.getElementById('itemView').style.display = 'none';
+  document.getElementById('summaryView').style.display = 'block';
+  
+  const totalItems = ITEMS.length;
+  const fullCount = Object.values(statuses).filter(s => s === 'full').length;
+  const lowCount = Object.values(statuses).filter(s => s === 'low').length;
+  const emptyCount = Object.values(statuses).filter(s => s === 'empty').length;
+  const uncountedCount = totalItems - fullCount - lowCount - emptyCount;
 
-  let html = '<div class="header">';
-  html += '<h1>Morning Star Supply Order</h1>';
-  html += '<div class="subtitle">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) + '</div>';
-  html += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
-  html += '</div>';
-
-  // Overall stats
-  html += '<div class="stats-bar">';
-  html += '<div class="stat"><div class="stat-num green">' + stats.full + '</div><div class="stat-label">Full</div></div>';
-  html += '<div class="stat"><div class="stat-num orange">' + stats.low + '</div><div class="stat-label">Low</div></div>';
-  html += '<div class="stat"><div class="stat-num red">' + stats.empty + '</div><div class="stat-label">Empty</div></div>';
-  html += '<div class="stat"><div class="stat-num gray">' + stats.pending + '</div><div class="stat-label">Unchecked</div></div>';
-  html += '</div>';
-
-  html += '<div class="locations">';
-  LOC_ORDER.forEach(loc => {
-    if (!LOCATIONS[loc]) return;
-    const s = getLocationStats(loc);
-    let badgeClass = 'badge-pending';
-    let badgeText = s.total + ' items';
-    if (s.pending === 0) {
-      badgeClass = 'badge-done';
-      badgeText = '\u2713 Done';
-    } else if (s.pending < s.total) {
-      badgeClass = 'badge-partial';
-      badgeText = (s.total - s.pending) + '/' + s.total;
-    }
-
-    html += '<div class="location-card" onclick="state.currentLocation=\'' + loc + '\';state.view=\'items\';state.search=\'\';state.filter=\'all\';render()">';
-    html += '<div><div class="location-name">' + loc + '</div>';
-    html += '<div class="location-count">' + s.total + ' items';
-    if (s.low > 0) html += ' &middot; <span style="color:#f39c12">' + s.low + ' low</span>';
-    if (s.empty > 0) html += ' &middot; <span style="color:#e74c3c">' + s.empty + ' empty</span>';
-    html += '</div></div>';
-    html += '<div class="location-badge"><span class="badge ' + badgeClass + '">' + badgeText + '</span><span class="chevron">\u203A</span></div>';
-    html += '</div>';
-  });
-  html += '</div>';
-
-  html += '<div class="bottom-spacer"></div>';
-  html += '<div class="action-bar">';
-  const orderCount = getOrderItems().length;
-  html += '<button class="action-btn btn-secondary" onclick="resetAll()">Reset</button>';
-  html += '<button class="action-btn btn-primary" onclick="state.view=\'summary\';render()">Review Order' + (orderCount > 0 ? ' (' + orderCount + ')' : '') + '</button>';
-  html += '</div>';
-
-  app.innerHTML = html;
-}
-
-function renderItems(app) {
-  const loc = state.currentLocation;
-  let items = LOCATIONS[loc] || [];
-  const locStats = getLocationStats(loc);
-
-  // Apply search filter
-  if (state.search) {
-    const q = state.search.toLowerCase();
-    items = items.filter(i => i.description.toLowerCase().includes(q) || i.itemNumber.toLowerCase().includes(q));
-  }
-
-  // Apply status filter
-  if (state.filter === 'pending') {
-    items = items.filter(i => !state.statuses[i.itemNumber]);
-  } else if (state.filter === 'low') {
-    items = items.filter(i => state.statuses[i.itemNumber] === 'low');
-  } else if (state.filter === 'empty') {
-    items = items.filter(i => state.statuses[i.itemNumber] === 'empty');
-  }
-
-  const pct = Math.round(((locStats.total - locStats.pending) / locStats.total) * 100);
-
-  let html = '<div class="header">';
-  html += '<div style="display:flex;align-items:center"><button class="back-btn" onclick="state.view=\'locations\';render()">\u2190 Back</button>';
-  html += '<div><div style="font-size:17px;font-weight:600">' + loc + '</div>';
-  html += '<div class="subtitle">' + locStats.pending + ' unchecked of ' + locStats.total + '</div></div></div>';
-  html += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
-  html += '</div>';
-
-  // Search
-  html += '<div class="search-bar"><input class="search-input" type="text" placeholder="Search items..." value="' + (state.search || '') + '" oninput="state.search=this.value;render()" id="searchInput"></div>';
-
-  // Filter pills
-  html += '<div class="filter-pills">';
-  ['all', 'pending', 'low', 'empty'].forEach(f => {
-    const active = state.filter === f ? ' active' : '';
-    let label = f.charAt(0).toUpperCase() + f.slice(1);
-    if (f === 'all') label = 'All (' + (LOCATIONS[loc] || []).length + ')';
-    else if (f === 'pending') label = 'Unchecked (' + locStats.pending + ')';
-    else if (f === 'low') label = 'Low (' + locStats.low + ')';
-    else if (f === 'empty') label = 'Empty (' + locStats.empty + ')';
-    html += '<div class="filter-pill' + active + '" onclick="state.filter=\'' + f + '\';render()">' + label + '</div>';
-  });
-  html += '</div>';
-
-  // Mark all remaining as Full button
-  if (locStats.pending > 0) {
-    html += '<div class="mark-all-row">';
-    html += '<button class="mark-all-btn mark-all-full" onclick="markAllInLocation(\'' + loc + '\', \'full\')">Mark all unchecked as FULL</button>';
-    html += '</div>';
-  }
-
-  // Items
-  html += '<div class="item-view">';
-  if (items.length === 0) {
-    html += '<div style="text-align:center;padding:40px;color:#999">No items match your filter</div>';
-  }
-  items.forEach(item => {
-    const s = state.statuses[item.itemNumber] || '';
-    html += '<div class="item-card">';
-    html += '<div class="item-number">' + item.itemNumber + '</div>';
-    html += '<div class="item-desc">' + item.description + '</div>';
-    html += '<div class="item-par">Par: ' + item.par + (item.par === 1 ? ' unit' : ' units') + '</div>';
-    if (item.notes) html += '<div class="item-notes">' + item.notes + '</div>';
-    html += '<div class="status-btns">';
-    html += '<button class="status-btn full' + (s === 'full' ? ' selected' : '') + '" onclick="setStatus(\'' + item.itemNumber + '\', \'full\')">\u2705 Full</button>';
-    html += '<button class="status-btn low' + (s === 'low' ? ' selected' : '') + '" onclick="setStatus(\'' + item.itemNumber + '\', \'low\')">\ud83d\udfe1 Low</button>';
-    html += '<button class="status-btn empty' + (s === 'empty' ? ' selected' : '') + '" onclick="setStatus(\'' + item.itemNumber + '\', \'empty\')">\ud83d\udd34 Empty</button>';
-    html += '</div></div>';
-  });
-  html += '</div>';
-
-  html += '<div class="bottom-spacer"></div>';
-  html += '<div class="action-bar">';
-  html += '<button class="action-btn btn-secondary" onclick="state.view=\'locations\';render()">Locations</button>';
-
-  // Find next unchecked location
-  const nextLoc = LOC_ORDER.find(l => l !== loc && LOCATIONS[l] && getLocationStats(l).pending > 0);
-  if (locStats.pending === 0 && nextLoc) {
-    html += '<button class="action-btn btn-primary" onclick="state.currentLocation=\'' + nextLoc + '\';state.search=\'\';state.filter=\'all\';render()">Next: ' + nextLoc + ' \u25B6</button>';
-  } else {
-    const orderCount = getOrderItems().length;
-    html += '<button class="action-btn btn-primary" onclick="state.view=\'summary\';render()">Review Order' + (orderCount > 0 ? ' (' + orderCount + ')' : '') + '</button>';
-  }
-  html += '</div>';
-
-  app.innerHTML = html;
-}
-
-function renderSummary(app) {
-  const orderItems = getOrderItems();
-  const overall = getOverallStats();
+  document.getElementById('countFull').textContent = fullCount;
+  document.getElementById('countLow').textContent = lowCount;
+  document.getElementById('countEmpty').textContent = emptyCount;
+  document.getElementById('countUncount').textContent = uncountedCount;
 
   // Group by location
-  const byLoc = {};
-  orderItems.forEach(item => {
-    if (!byLoc[item.location]) byLoc[item.location] = [];
-    byLoc[item.location].push(item);
+  const locations = [...new Set(ITEMS.map(item => item.location))];
+  let html = '';
+
+  locations.forEach(location => {
+    const items = getLocationItems(location);
+    const locFullCount = items.filter(item => getItemStatus(item.itemNumber) === 'full').length;
+    const locLowCount = items.filter(item => getItemStatus(item.itemNumber) === 'low').length;
+    const locEmptyCount = items.filter(item => getItemStatus(item.itemNumber) === 'empty').length;
+
+    html += `
+      <div class="summary-section">
+        <h3>${location}</h3>
+        <div class="summary-item">
+          <span>Full</span>
+          <span class="order-qty">${locFullCount}</span>
+        </div>
+        <div class="summary-item">
+          <span>Low</span>
+          <span class="order-qty low-qty">${locLowCount}</span>
+        </div>
+        <div class="summary-item">
+          <span>Empty (To Order)</span>
+          <span class="order-qty">${locEmptyCount}</span>
+        </div>
+      </div>
+    `;
   });
 
-  let html = '<div class="header">';
-  html += '<div style="display:flex;align-items:center"><button class="back-btn" onclick="state.view=\'locations\';render()">\u2190 Back</button>';
-  html += '<div><div style="font-size:17px;font-weight:600">Order Summary</div>';
-  html += '<div class="subtitle">' + orderItems.length + ' items to order</div></div></div>';
-  html += '</div>';
-
-  html += '<div class="summary">';
-
-  // Warning if items unchecked
-  if (overall.pending > 0) {
-    html += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:12px;margin-bottom:12px;font-size:14px">';
-    html += '<strong>\u26A0\uFE0F ' + overall.pending + ' items not checked yet.</strong> Go back and finish counting before submitting.';
-    html += '</div>';
-  }
-
-  if (orderItems.length === 0) {
-    html += '<div style="text-align:center;padding:40px"><div style="font-size:48px;margin-bottom:10px">\u2705</div>';
-    html += '<div style="font-size:18px;font-weight:600">Everything is stocked!</div>';
-    html += '<div style="color:#666;margin-top:4px">No items need to be ordered.</div></div>';
-  } else {
-    // Stats
-    html += '<div class="stats-bar" style="margin:0 0 12px">';
-    const lowCount = orderItems.filter(i => i.status === 'low').length;
-    const emptyCount = orderItems.filter(i => i.status === 'empty').length;
-    html += '<div class="stat"><div class="stat-num orange">' + lowCount + '</div><div class="stat-label">Low Items</div></div>';
-    html += '<div class="stat"><div class="stat-num red">' + emptyCount + '</div><div class="stat-label">Empty Items</div></div>';
-    html += '<div class="stat"><div class="stat-num" style="color:#2980b9">' + orderItems.length + '</div><div class="stat-label">Total to Order</div></div>';
-    html += '</div>';
-
-    LOC_ORDER.forEach(loc => {
-      if (!byLoc[loc] || byLoc[loc].length === 0) return;
-      html += '<div class="summary-section">';
-      html += '<h3>' + loc + ' (' + byLoc[loc].length + ')</h3>';
-      byLoc[loc].forEach(item => {
-        const qtyClass = item.status === 'low' ? 'order-qty low-qty' : 'order-qty';
-        html += '<div class="summary-item">';
-        html += '<div style="flex:1"><div style="font-weight:500">' + item.description + '</div>';
-        html += '<div style="font-size:12px;color:#999">' + item.itemNumber + ' &middot; Par: ' + item.par + '</div></div>';
-        html += '<div class="' + qtyClass + '">' + item.orderQty + '</div>';
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-  }
-
-  html += '</div>';
-
-  html += '<div class="bottom-spacer"></div>';
-  html += '<div class="action-bar">';
-  html += '<button class="action-btn btn-secondary" onclick="state.view=\'locations\';render()">Back</button>';
-  if (orderItems.length > 0) {
-    html += '<button class="action-btn btn-export" onclick="exportCSV()">Export Order \u2B07</button>';
-  }
-  html += '</div>';
-
-  app.innerHTML = html;
+  document.getElementById('summaryContainer').innerHTML = html;
 }
 
+function exportToCSV() {
+  let csv = 'Location,Item Number,Description,Par,Status\n';
+  
+  ITEMS.forEach(item => {
+    const status = getItemStatus(item.itemNumber) || 'Uncounted';
+    const desc = item.description.replace(/"/g, '""');
+    csv += `"${item.location}","${item.itemNumber}","${desc}",${item.par},"${status}"\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'supply-order-' + new Date().toISOString().split('T')[0] + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+
+  showToast('CSV exported successfully');
+}
+
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+function updateActionBar() {
+  const items = currentView === 'items' ? getLocationItems(selectedLocation) : ITEMS;
+  
+  let html = '';
+  if (currentView === 'locations') {
+    html = `
+      <button class="action-btn btn-primary" onclick="showSummary()">View Summary</button>
+      <button class="action-btn btn-export" onclick="exportToCSV()">Export CSV</button>
+    `;
+  } else if (currentView === 'items') {
+    html = `
+      <button class="action-btn btn-secondary" onclick="backToLocations()">Back</button>
+      <button class="action-btn btn-primary" onclick="showSummary()">Summary</button>
+    `;
+  } else if (currentView === 'summary') {
+    html = `
+      <button class="action-btn btn-secondary" onclick="backToLocations()">Back</button>
+      <button class="action-btn btn-export" onclick="exportToCSV()">Export CSV</button>
+    `;
+  }
+  
+  document.getElementById('actionBar').innerHTML = html;
+}
+
+// Search functionality
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      if (currentView === 'items') {
+        renderItems();
+        updateItemProgress();
+      }
+    });
+  }
+});
+
+// Watch for view changes
+const originalShowSummary = showSummary;
+showSummary = function() {
+  originalShowSummary();
+  currentView = 'summary';
+  updateActionBar();
+};
+
+const originalSelectLocation = selectLocation;
+selectLocation = function(location) {
+  originalSelectLocation(location);
+  currentView = 'items';
+  updateActionBar();
+};
+
+const originalBackToLocations = backToLocations;
+backToLocations = function() {
+  originalBackToLocations();
+  currentView = 'locations';
+  updateActionBar();
+};
+
 // Initialize
-render();
+initializeApp();
+updateActionBar();
+setInterval(updateProgress, 1000);
 </script>
+
 </body>
 </html>
