@@ -125,7 +125,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <div id="mainView">
   <div class="header">
     <h1>Morning Star Supply Order</h1>
-    <div class="subtitle">57-bed skilled nursing facility · Clovis, CA</div>
+    <div class="subtitle" id="mainSubtitle"><a href="https://snbadger.github.io/morning-star-rounds/" style="color:inherit">← All Apps</a> · 57-bed skilled nursing facility · Clovis, CA</div>
     <div class="progress-bar">
       <div class="progress-fill" id="progressFill" style="width: 0%"></div>
     </div>
@@ -217,6 +217,10 @@ const CATEGORY_COLORS = {
   'Other': '#16a085',
 };
 
+// Staff see the simple exception-reporting mode. Open with #admin for the full
+// par-walk toolkit (Full buttons, Mark All, Reset, CSV export).
+const ADMIN = /admin/i.test(location.hash) || /[?&]admin/i.test(location.search);
+
 let currentView = 'locations';
 let selectedLocation = null;
 let statuses = {};
@@ -226,6 +230,13 @@ let selectedCategory = null;
 
 function initializeApp() {
   loadStatuses();
+  if (!ADMIN) {
+    document.querySelector('.mark-all-btns').style.display = 'none';
+    document.querySelectorAll('.progress-bar').forEach(el => el.style.display = 'none');
+    document.getElementById('mainSubtitle').innerHTML =
+      '<a href="https://snbadger.github.io/morning-star-rounds/" style="color:inherit">← All Apps</a> · Tap anything that\'s low or out — it saves automatically';
+    document.querySelector('#summaryView h1').textContent = 'Needed Supplies';
+  }
   renderLocations();
   updateProgress();
 }
@@ -260,7 +271,10 @@ function renderLocations() {
     const uncountedCount = items.length - fullCount - lowCount - emptyCount;
     
     let badge = '';
-    if (uncountedCount > 0) {
+    if (!ADMIN) {
+      const flagged = lowCount + emptyCount;
+      badge = flagged > 0 ? `<div class="badge badge-done">${flagged} needed</div>` : '';
+    } else if (uncountedCount > 0) {
       badge = `<div class="badge badge-pending">${uncountedCount} pending</div>`;
     } else if (emptyCount > 0) {
       badge = `<div class="badge badge-done">${emptyCount} to order</div>`;
@@ -382,9 +396,9 @@ function renderItemCard(item) {
       <div class="item-par">Par: ${item.par}</div>
       ${item.notes ? `<div class="item-notes">${item.notes}</div>` : ''}
       <div class="status-btns">
-        <button class="status-btn full${status === 'full' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'full')">Full</button>
+        ${ADMIN ? `<button class="status-btn full${status === 'full' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'full')">Full</button>` : ''}
         <button class="status-btn low${status === 'low' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'low')">Low</button>
-        <button class="status-btn empty${status === 'empty' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'empty')">Empty</button>
+        <button class="status-btn empty${status === 'empty' ? ' selected' : ''}" onclick="setItemStatus('${item.itemNumber}', 'empty')">${ADMIN ? 'Empty' : 'Out'}</button>
       </div>
     </div>
   `;
@@ -502,10 +516,38 @@ function showSummary() {
   document.getElementById('countLow').textContent = lowCount;
   document.getElementById('countEmpty').textContent = emptyCount;
   document.getElementById('countUncount').textContent = uncountedCount;
+  if (!ADMIN) {
+    document.getElementById('countFull').parentElement.style.display = 'none';
+    document.getElementById('countUncount').parentElement.style.display = 'none';
+    document.getElementById('countEmpty').nextElementSibling.textContent = 'Out';
+  }
 
   // Group by location
   const locations = [...new Set(ITEMS.map(item => item.location))];
   let html = '';
+
+  if (!ADMIN) {
+    // Staff mode: list the actual flagged items so the list is actionable as-is.
+    locations.forEach(location => {
+      const flagged = getLocationItems(location)
+        .filter(item => ['low', 'empty'].includes(getItemStatus(item.itemNumber)));
+      if (!flagged.length) return;
+      html += `
+        <div class="summary-section">
+          <h3>${location}</h3>
+          ${flagged.map(item => `
+            <div class="summary-item">
+              <span>${item.description}</span>
+              <span class="order-qty${getItemStatus(item.itemNumber) === 'low' ? ' low-qty' : ''}">${getItemStatus(item.itemNumber) === 'low' ? 'Low' : 'Out'}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    });
+    if (!html) html = '<div class="summary-section"><h3>Nothing marked yet</h3></div>';
+    document.getElementById('summaryContainer').innerHTML = html;
+    return;
+  }
 
   locations.forEach(location => {
     const items = getLocationItems(location);
@@ -569,19 +611,23 @@ function updateActionBar() {
   
   let html = '';
   if (currentView === 'locations') {
-    html = `
+    html = ADMIN ? `
       <button class="action-btn btn-primary" onclick="showSummary()">View Summary</button>
       <button class="action-btn btn-export" onclick="exportToCSV()">Export CSV</button>
+    ` : `
+      <button class="action-btn btn-primary" onclick="showSummary()">View Needed List</button>
     `;
   } else if (currentView === 'items') {
     html = `
       <button class="action-btn btn-secondary" onclick="backToLocations()">Back</button>
-      <button class="action-btn btn-primary" onclick="showSummary()">Summary</button>
+      <button class="action-btn btn-primary" onclick="showSummary()">${ADMIN ? 'Summary' : 'Needed List'}</button>
     `;
   } else if (currentView === 'summary') {
-    html = `
+    html = ADMIN ? `
       <button class="action-btn btn-secondary" onclick="backToLocations()">Back</button>
       <button class="action-btn btn-export" onclick="exportToCSV()">Export CSV</button>
+    ` : `
+      <button class="action-btn btn-secondary" onclick="backToLocations()">Back</button>
     `;
   }
   
