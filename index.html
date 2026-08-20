@@ -93,6 +93,8 @@ const ITEMS = [{"location": "West Hall", "itemNumber": "MTB084Z", "description":
 var SUPABASE_URL='https://pmnudshutxwidxdtouqj.supabase.co';
 var SUPABASE_KEY='sb_publishable_wzX5nLx18cfErNTRPO671w_sH4ED7ET';
 var sb=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+var SYNC_URL=SUPABASE_URL+'/functions/v1/supply-asana-sync';
+function pingAsana(id){fetch(SYNC_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:id})}).catch(function(){})}
 // Ordering view (mark items off) lives behind #admin — for whoever places the orders.
 var ADMIN=/admin/i.test(location.hash)||/[?&]admin/i.test(location.search);
 
@@ -163,6 +165,7 @@ async function addItem(num){
   var r=await sb.rpc('submit_supply_request',{p_item_number:it.itemNumber,p_description:it.description,
     p_location:it.location,p_category:it.category,p_by:me.name+' ('+me.dept+')'});
   if(r.error){toast('Could not add — try again');return}
+  pingAsana(r.data);
   toast('Added to the order list ✓');
   await loadList();renderResults();
 }
@@ -172,6 +175,7 @@ async function addCustom(){
   var r=await sb.rpc('submit_supply_request',{p_item_number:null,p_description:txt,
     p_location:null,p_category:'Custom',p_by:me.name+' ('+me.dept+')'});
   if(r.error){toast('Could not add — try again');return}
+  pingAsana(r.data);
   toast('Added to the order list ✓');
   document.getElementById('search').value='';
   await loadList();renderResults();
