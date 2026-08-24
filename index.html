@@ -82,6 +82,7 @@ input:focus,select:focus{outline:none;border-color:var(--primary-light)}
 
     <div class="section-title" id="orderedTitle" style="display:none"><span>Ordered recently ✓</span></div>
     <div id="orderedList"></div>
+    <div style="text-align:center;margin-top:20px;font-size:14px;color:var(--text-light)">Signed in as <b id="footWho"></b> &nbsp;·&nbsp; <span style="color:var(--danger);font-weight:700;cursor:pointer;text-decoration:underline" onclick="logout()">Done — log out</span></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -130,7 +131,13 @@ function saveIdentity(){
 function showMain(){
   document.getElementById('identityCard').style.display='none';
   document.getElementById('mainUI').style.display='';
+  document.getElementById('footWho').textContent=me.name;
   if(ADMIN)document.getElementById('adminBar').style.display='flex';
+}
+// Shared phone: clear the shared identity and go back to the Staff Apps home screen.
+function logout(){
+  try{localStorage.removeItem('ii_name');localStorage.removeItem('ii_dept');}catch(e){}
+  location.href='https://snbadger.github.io/morning-star-rounds/';
 }
 
 /* ---------- search ---------- */
